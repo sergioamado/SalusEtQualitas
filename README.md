@@ -20,7 +20,7 @@ supabase/   Banco de dados: migrations e dados de demonstração
 | Cadastro de serviços (foto, vídeo do YouTube, o que aparece no link) | — | ✅ |
 | Cadastro de profissionais, salas e horários (inclui clínica de uma pessoa só) | RF13 | ✅ |
 | Agenda interna: calendário dia/semana/lista, filtros, encaixe, bloqueios, lista de espera, arrastar | RF01–RF07, RNF04 | ✅ |
-| Dashboard | RF14 | ⏳ próxima |
+| Dashboard | RF14 | ✅ |
 
 ## Como rodar
 
@@ -170,6 +170,24 @@ A página inicial de cada clínica no painel agora é a **Agenda**:
 - **Lista de espera (RF06):** aba própria. "Encaixar na agenda" abre o agendamento já preenchido e tira o paciente da lista.
 - **Tempo real:** agendamentos feitos pelo link aparecem na agenda na hora.
 - Quem tem o papel *Profissional* abre a agenda já filtrada na própria coluna.
+
+## Etapa 5 — Dashboard (RF14)
+
+Rode `supabase/migrations/20261124030000_dashboard.sql`.
+
+Aba **Dashboard**. Começa na semana atual. Dá para trocar para **Quinzena** (1 a 15 ou 16 ao fim do mês), **Mês**, **Ano** ou **Intervalo** (datas de/até, até 400 dias), voltar períodos com ‹ › e filtrar por profissional.
+- **Ociosidade por período:** a semana, a quinzena, o mês e o ano de hoje (ou do período escolhido) lado a lado, além do intervalo escolhido.
+- **Números:**
+  - agendamentos, comparados ao período anterior;
+  - ociosidade: a parte do expediente, já sem pausas e bloqueios, que ficou sem paciente;
+  - lista de espera;
+  - cancelamentos e faltas.
+- **Vendas (só para o gerente):** realizadas (concluídos), previstas (agendados, confirmados e aguardando), perdidas com faltas e vendas por serviço.
+- **Gráficos:**
+  - agendamentos por período (dia, semana ou mês, conforme o tamanho do intervalo);
+  - por situação, por convênio e por canal;
+  - pacientes frequentes.
+- Tudo é calculado no banco pela função `clinic_dashboard`, que respeita o isolamento entre clínicas.
 
 ## Como o portal funciona
 

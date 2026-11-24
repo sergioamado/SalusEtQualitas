@@ -90,6 +90,7 @@ function PanelHeader({
   const base = `/painel/${clinic.id}`;
   const tabs = [
     { href: base, label: 'Agenda' },
+    { href: `${base}/dashboard`, label: 'Dashboard' },
     { href: `${base}/agendamentos`, label: 'Pedidos recebidos' },
     { href: `${base}/espera`, label: 'Lista de espera' },
     ...(canManage

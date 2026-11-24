@@ -1,0 +1,57 @@
+@startuml implantacao
+title Salus Et Qualitas — Arquitetura (Diagrama de Implantação UML)
+left to right direction
+skinparam node {
+  BackgroundColor #F7F9FC
+  BorderColor #3A5A80
+}
+
+node "Dispositivo do usuário\n(navegador, Android ou iPhone)" <<device>> as dev {
+  artifact "App Expo\n(React Native + TypeScript,\nexpo-router)" as app
+}
+
+cloud "Supabase (nuvem)" as sb {
+  node "API Gateway" <<execution environment>> {
+    component "Auth" as auth
+    component "PostgREST\n(REST + RPC)" as rest
+    component "Realtime" as rt
+    component "Storage\n(clinic-assets)" as st
+  }
+  node "Edge Runtime (Deno)" <<execution environment>> {
+    component "admin-users" as efAdmin
+    component "google-calendar-sync" as efGoogle
+  }
+  database "PostgreSQL" as pg {
+    component "Tabelas + RLS" as tbl
+    component "Funções RPC" as fn
+    component "Gatilhos + pg_net" as trg
+    component "Vault" as vault
+  }
+}
+
+cloud "Serviços externos" {
+  component "Google Calendar API" as gcal
+  component "ViaCEP" as viacep
+  component "YouTube" as yt
+}
+
+app --> auth : HTTPS (login, JWT)
+app --> rest : HTTPS
+app --> rt : WebSocket
+app --> st : HTTPS (fotos)
+app --> efAdmin : HTTPS
+app --> efGoogle : HTTPS (testar)
+app --> viacep : HTTPS (CEP)
+app --> yt : abre vídeo
+
+rest --> fn
+rest --> tbl
+fn --> tbl
+rt --> tbl : replicação
+tbl --> trg : AFTER INSERT/UPDATE
+trg --> vault : lê segredos
+trg --> efGoogle : HTTP (pg_net)
+efGoogle --> tbl : service role
+efGoogle --> gcal : conta de serviço
+efAdmin --> auth : admin API
+@enduml

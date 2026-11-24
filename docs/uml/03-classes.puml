@@ -1,0 +1,239 @@
+@startuml classes
+title Salus Et Qualitas — Diagrama de Classes (modelo de domínio)
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #F7F9FC
+  BorderColor #3A5A80
+}
+
+' ================= Enumerações
+enum PapelMembro <<enumeration>> {
+  admin
+  recepcao
+  profissional
+}
+enum SituacaoAgendamento <<enumeration>> {
+  reservado
+  agendado
+  confirmado
+  concluido
+  nao_compareceu
+  cancelado
+}
+enum Modalidade <<enumeration>> {
+  clinica
+  residencial
+}
+enum Canal <<enumeration>> {
+  interno
+  portal
+  whatsapp
+  telefone
+  instagram
+  outro
+}
+enum SituacaoContato <<enumeration>> {
+  lead
+  pre_cadastro
+  paciente
+}
+enum TipoBloqueio <<enumeration>> {
+  reuniao
+  feriado
+  folga
+  outro
+}
+enum SituacaoEspera <<enumeration>> {
+  aguardando
+  encaixado
+  desistiu
+}
+
+' ================= Classes
+class Usuario {
+  - id : UUID
+  - email : String
+  + entrar(email, senha) : Sessao
+  + sair()
+}
+
+class GerenteDoSistema {
+  - criadoEm : DateTime
+  + cadastrarClinica(dados) : Clinica
+}
+
+class MembroDaClinica {
+  - papel : PapelMembro
+  - criadoEm : DateTime
+  + podeGerenciar() : Boolean
+}
+
+class Clinica {
+  - id : UUID
+  - slug : String
+  - nome : String
+  - telefone : String
+  - fusoHorario : String
+  - agendamentoPublicoAtivo : Boolean
+  - situacaoInicialPublica : SituacaoAgendamento
+  - intervaloHorariosMin : Integer
+  - antecedenciaMinimaMin : Integer
+  - diasMaximosAFrente : Integer
+  - corPrimaria : String
+  - logoUrl : String
+  - googleAtivo : Boolean
+  - googleCalendarId : String
+  + horariosDisponiveis(servico, profissional, modalidade, dia) : List<DateTime>
+  + agendarPeloLink(dados, consentimento) : Agendamento
+  + painel(de, ate, profissional) : Dashboard
+  + ociosidadePorPeriodo(dataRef) : List<Ociosidade>
+}
+
+class Profissional {
+  - id : UUID
+  - nome : String
+  - especialidade : String
+  - cor : String
+  - ativo : Boolean
+  - visivelNoLink : Boolean
+  - atendeResidencial : Boolean
+  - deslocamentoMin : Integer
+  + salvar(servicos, horarios, pausas)
+}
+
+class HorarioDeTrabalho {
+  - diaSemana : Integer
+  - inicio : Time
+  - fim : Time
+}
+
+class Pausa {
+  - diaSemana : Integer
+  - inicio : Time
+  - fim : Time
+  - rotulo : String
+}
+
+class Sala {
+  - id : UUID
+  - nome : String
+  - ativa : Boolean
+}
+
+class Servico {
+  - id : UUID
+  - nome : String
+  - descricao : String
+  - duracaoMin : Integer
+  - preco : Decimal
+  - naClinica : Boolean
+  - residencial : Boolean
+  - exigeSala : Boolean
+  - visivelNoLink : Boolean
+  - imagemUrl : String
+  - videoUrl : String
+  - ordem : Integer
+}
+
+class Contato {
+  - id : UUID
+  - nomeCompleto : String
+  - email : String
+  - telefone : String
+  - situacao : SituacaoContato
+  - convenio : String
+  - origem : Canal
+  - consentimentoEm : DateTime
+  + {static} encontrarOuCriar(clinica, dados) : Contato
+}
+
+class Endereco <<dataType>> {
+  - cep : String
+  - logradouro : String
+  - numero : String
+  - complemento : String
+  - bairro : String
+  - cidade : String
+  - uf : String
+}
+
+class Agendamento {
+  - id : UUID
+  - modalidade : Modalidade
+  - situacao : SituacaoAgendamento
+  - canal : Canal
+  - inicio : DateTime
+  - fim : DateTime
+  - folgaMin : Integer
+  - convenio : String
+  - preco : Decimal
+  - observacoes : String
+  - motivoCancelamento : String
+  - googleEventId : String
+  + salvar(forcarEncaixe : Boolean)
+  + alterarSituacao(nova : SituacaoAgendamento)
+  + cancelar(motivo : String)
+  + remarcar(inicio : DateTime, profissional : Profissional)
+}
+
+class Bloqueio {
+  - id : UUID
+  - tipo : TipoBloqueio
+  - titulo : String
+  - inicio : DateTime
+  - fim : DateTime
+  - observacoes : String
+}
+
+class EntradaListaEspera {
+  - id : UUID
+  - dataDesejada : Date
+  - desdeHora : Time
+  - ateHora : Time
+  - observacoes : String
+  - situacao : SituacaoEspera
+  + encaixar() : Agendamento
+}
+
+class SincronizadorGoogle <<service>> {
+  + sincronizar(agendamento : Agendamento)
+  + testar(clinica : Clinica) : Boolean
+}
+
+' ================= Relacionamentos
+GerenteDoSistema --|> Usuario
+Usuario "1" -- "0..*" MembroDaClinica
+Clinica "1" *-- "0..*" MembroDaClinica : equipe
+Clinica "1" *-- "0..*" Profissional
+Clinica "1" *-- "0..*" Sala
+Clinica "1" *-- "0..*" Servico : oferece
+Clinica "1" *-- "0..*" Contato
+Clinica "1" *-- "0..*" Agendamento
+Clinica "1" *-- "0..*" Bloqueio
+Clinica "1" *-- "0..*" EntradaListaEspera
+
+Usuario "0..1" -- "0..1" Profissional : login ligado >
+Profissional "1" *-- "0..*" HorarioDeTrabalho
+Profissional "1" *-- "0..*" Pausa
+Profissional "0..*" -- "0..*" Servico : realiza >
+Servico "0..*" -- "0..*" Sala : pode usar >
+
+Agendamento "0..*" --> "1" Contato : paciente
+Agendamento "0..*" --> "1" Profissional
+Agendamento "0..*" --> "1" Servico
+Agendamento "0..*" --> "0..1" Sala
+Agendamento *-- "0..1" Endereco : local residencial
+Contato *-- "0..1" Endereco
+
+Bloqueio "0..*" --> "0..1" Profissional
+Bloqueio "0..*" --> "0..1" Sala
+note bottom of Bloqueio : sem profissional e sem sala,\nbloqueia a clínica inteira
+
+EntradaListaEspera "0..*" --> "1" Contato
+EntradaListaEspera "0..*" --> "0..1" Profissional
+EntradaListaEspera "0..*" --> "0..1" Servico
+
+SincronizadorGoogle ..> Agendamento : <<use>>
+SincronizadorGoogle ..> Clinica : <<use>>
+@enduml

@@ -1,0 +1,113 @@
+@startuml casos-de-uso
+title Salus Et Qualitas — Diagrama de Casos de Uso (UML)
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle default
+skinparam usecase {
+  BackgroundColor #F7F9FC
+  BorderColor #3A5A80
+}
+
+actor "Paciente\n(visitante)" as Paciente
+actor "Membro da equipe" as Membro
+actor "Recepcionista" as Recepcao
+actor "Profissional" as Profissional
+actor "Gerente da clínica" as Gerente
+actor "Gerente do sistema" as Plataforma
+actor "Google Agenda" as Google <<sistema>>
+actor "ViaCEP" as ViaCEP <<sistema>>
+
+Recepcao -|> Membro
+Profissional -|> Membro
+Gerente -|> Membro
+Plataforma -|> Gerente
+
+rectangle "Salus Et Qualitas — Módulo de Agendamento" {
+
+  package "Portal público (link da clínica)" {
+    usecase "UC01 Ver página da clínica\ne serviços" as UC01
+    usecase "UC02 Agendar horário\npelo link" as UC02
+    usecase "Consultar horários\ndisponíveis" as UC02a
+    usecase "Informar dados e\naceite LGPD" as UC02b
+    usecase "Preencher endereço\npelo CEP" as UC02c
+  }
+
+  package "Agenda interna" {
+    usecase "UC03 Entrar no sistema" as UC03
+    usecase "UC04 Consultar agenda\n(dia, semana, lista, filtros)" as UC04
+    usecase "UC05 Agendar pela recepção" as UC05
+    usecase "Buscar ou cadastrar\npaciente (RN01)" as UC05a
+    usecase "Confirmar encaixe" as UC05b
+    usecase "UC06 Remarcar atendimento\n(arrastar)" as UC06
+    usecase "UC07 Alterar situação\ndo atendimento" as UC07
+    usecase "Cancelar com motivo" as UC07a
+    usecase "UC08 Aprovar pedidos\nrecebidos (tempo real)" as UC08
+    usecase "UC09 Registrar bloqueio\n(folga, feriado, reunião)" as UC09
+    usecase "UC10 Gerenciar lista de espera" as UC10
+    usecase "Encaixar paciente\nda lista" as UC10a
+    usecase "UC11 Ver dashboard" as UC11
+    usecase "Ver vendas" as UC11a
+    usecase "Sincronizar com\nGoogle Agenda" as UCG
+  }
+
+  package "Gestão da clínica" {
+    usecase "UC12 Gerenciar serviços\n(foto, vídeo do YouTube)" as UC12
+    usecase "UC13 Gerenciar profissionais,\nsalas e horários" as UC13
+    usecase "Cadastrar a si mesmo\ncomo profissional" as UC13a
+    usecase "UC14 Configurar clínica\ne aparência" as UC14
+    usecase "UC15 Vincular Google Agenda" as UC15
+    usecase "Testar conexão" as UC15a
+    usecase "UC16 Gerenciar equipe\ne acessos" as UC16
+  }
+
+  package "Administração da plataforma" {
+    usecase "UC17 Cadastrar clínica" as UC17
+  }
+}
+
+' ---- Paciente
+Paciente --> UC01
+Paciente --> UC02
+UC02 ..> UC02a : <<include>>
+UC02 ..> UC02b : <<include>>
+UC02c ..> UC02b : <<extend>>\n[atendimento residencial]
+UC02c --> ViaCEP
+
+' ---- Equipe
+Membro --> UC03
+Membro --> UC04
+Membro --> UC05
+Membro --> UC06
+Membro --> UC07
+Membro --> UC08
+Membro --> UC09
+Membro --> UC10
+Membro --> UC11
+UC05 ..> UC05a : <<include>>
+UC05b ..> UC05 : <<extend>>\n[fora do expediente,\npausa ou bloqueio]
+UC05b ..> UC06 : <<extend>>
+UC07a ..> UC07 : <<extend>>
+UC10a ..> UC10 : <<extend>>
+UC10a ..> UC05 : <<include>>
+UC11a ..> UC11 : <<extend>>\n[usuário gerente]
+
+UCG ..> UC02 : <<extend>>\n[Google ativo]
+UCG ..> UC05 : <<extend>>
+UCG ..> UC06 : <<extend>>
+UCG ..> UC07 : <<extend>>
+UCG --> Google
+
+' ---- Gerente da clínica
+Gerente --> UC12
+Gerente --> UC13
+Gerente --> UC14
+Gerente --> UC15
+Gerente --> UC16
+UC13a ..> UC13 : <<extend>>\n[clínica pequena]
+UC15 ..> UC15a : <<include>>
+UC15a --> Google
+
+' ---- Gerente do sistema
+Plataforma --> UC17
+UC13a ..> UC17 : <<extend>>\n[gerente também atende]
+@enduml

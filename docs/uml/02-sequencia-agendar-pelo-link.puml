@@ -1,0 +1,82 @@
+@startuml sequencia-agendar-pelo-link
+title Salus Et Qualitas — Diagrama de Sequência: UC02 Agendar horário pelo link
+autonumber
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+
+actor Paciente
+boundary "Portal\n(BookingFlow)" as UI
+participant "ViaCEP" as ViaCEP <<sistema externo>>
+participant "API Supabase\n(PostgREST)" as API
+database "Postgres\npublic_book()" as DB
+participant "Gatilho\nnotify_google_calendar" as Trg
+control "Edge Function\ngoogle-calendar-sync" as EF
+participant "Google Agenda" as Google <<sistema externo>>
+participant "Realtime" as RT
+boundary "Painel da recepção\n(AppointmentsInbox)" as Painel
+actor Recepcionista
+
+Paciente -> UI : abre /agendar/{slug}
+UI -> API : rpc public_clinic(slug)
+API -> DB : public_clinic(slug)
+DB --> API : clínica, serviços, profissionais
+API --> UI : dados públicos
+UI --> Paciente : página da clínica
+
+Paciente -> UI : escolhe serviço, local e profissional
+Paciente -> UI : escolhe o dia
+UI -> API : rpc public_available_slots(slug, serviço, profissional, local, dia)
+API -> DB : public_available_slots(...)
+DB --> UI : horários livres (expediente − pausas − bloqueios − ocupados)
+Paciente -> UI : escolhe o horário
+
+opt atendimento residencial
+  Paciente -> UI : digita o CEP
+  UI -> ViaCEP : GET /ws/{cep}/json
+  ViaCEP --> UI : rua, bairro, cidade, UF
+end
+
+Paciente -> UI : nome, e-mail, WhatsApp e aceite LGPD
+UI -> API : rpc public_book(slug, ..., consentimento)
+activate DB
+API -> DB : public_book(...)
+DB -> DB : valida consentimento, dados e antecedência
+DB -> DB : pg_advisory_xact_lock(clínica)
+DB -> DB : _check_slot(...) (RN03)
+
+alt horário indisponível
+  DB --> API : erro SLOT_UNAVAILABLE
+  API --> UI : erro
+  UI --> Paciente : "Esse horário acabou de ser ocupado"
+else horário livre
+  DB -> DB : procura contato por e-mail e telefone (RN01)
+  alt contato não existe
+    DB -> DB : insert contacts (status = lead)
+  else contato existe
+    DB -> DB : completa só os dados que faltam
+  end
+  DB -> DB : insert appointments\n(status = public_booking_status, RN04)
+  note right of DB
+    Restrição de exclusão impede
+    sobreposição (RNF03); se ocorrer,
+    devolve SLOT_UNAVAILABLE.
+  end note
+  DB -> Trg : AFTER INSERT
+  activate Trg
+  Trg ->> EF : pg_net http_post({appointment_id})\n[Google ativo na clínica]
+  deactivate Trg
+  DB --> API : appointment_id, status, horário
+  deactivate DB
+  API --> UI : confirmação
+  UI --> Paciente : "Pedido enviado" / "Agendado"
+
+  DB ->> RT : postgres_changes (INSERT appointments)
+  RT ->> Painel : novo pedido
+  Painel --> Recepcionista : aviso de pedido recebido
+
+  EF -> DB : lê agendamento (service role)
+  EF -> Google : cria evento no calendário do gerente
+  Google --> EF : event id
+  EF -> DB : update appointments.google_event_id
+end
+@enduml

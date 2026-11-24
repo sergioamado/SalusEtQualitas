@@ -1,0 +1,244 @@
+@startuml entidade-relacionamento
+title Salus Et Qualitas — Diagrama Entidade-Relacionamento (modelo físico, Postgres)
+hide circle
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #F7F9FC
+  BorderColor #3A5A80
+}
+
+entity "auth.users\n(Supabase Auth)" as users {
+  * id : uuid <<PK>>
+  --
+  email : text
+}
+
+entity platform_admins {
+  * user_id : uuid <<PK, FK>>
+  --
+  * created_at : timestamptz
+}
+
+entity clinics {
+  * id : uuid <<PK>>
+  --
+  * slug : text <<UK>>
+  * name : text
+  phone : text
+  email : text
+  address : text
+  * timezone : text
+  * public_booking_enabled : bool
+  * public_booking_status : appointment_status
+  * slot_interval_min : int
+  * min_notice_min : int
+  * max_days_ahead : int
+  logo_url : text
+  cover_url : text
+  * primary_color : text
+  * secondary_color : text
+  * font_family : text
+  welcome_message : text
+  whatsapp : text
+  instagram : text
+  * google_notify_enabled : bool
+  google_calendar_id : text
+  * created_at : timestamptz
+}
+
+entity clinic_members {
+  * clinic_id : uuid <<PK, FK>>
+  * user_id : uuid <<PK, FK>>
+  --
+  * role : member_role
+  * created_at : timestamptz
+}
+
+entity professionals {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  user_id : uuid <<FK, UK(clinic_id,user_id)>>
+  * name : text
+  specialty : text
+  color : text
+  * active : bool
+  * public_visible : bool
+  * home_care_enabled : bool
+  * travel_buffer_min : int
+  * created_at : timestamptz
+}
+
+entity working_hours {
+  * id : uuid <<PK>>
+  --
+  * professional_id : uuid <<FK>>
+  * weekday : smallint
+  * start_time : time
+  * end_time : time
+}
+
+entity professional_breaks {
+  * id : uuid <<PK>>
+  --
+  * professional_id : uuid <<FK>>
+  * weekday : smallint
+  * start_time : time
+  * end_time : time
+  label : text
+}
+
+entity rooms {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  * name : text
+  * active : bool
+  * created_at : timestamptz
+}
+
+entity procedures {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  * name : text
+  description : text
+  * duration_min : int
+  price : numeric
+  * allows_clinic : bool
+  * allows_home_care : bool
+  * requires_room : bool
+  * public_visible : bool
+  * active : bool
+  image_url : text
+  video_url : text
+  * sort_order : int
+  * created_at : timestamptz
+}
+
+entity professional_procedures {
+  * professional_id : uuid <<PK, FK>>
+  * procedure_id : uuid <<PK, FK>>
+}
+
+entity procedure_rooms {
+  * procedure_id : uuid <<PK, FK>>
+  * room_id : uuid <<PK, FK>>
+}
+
+entity contacts {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  * full_name : text
+  email : text
+  phone : text
+  * status : contact_status
+  insurance : text
+  cep, street, number, complement,
+  district, city, state : text
+  * source : appointment_channel
+  consent_at : timestamptz
+  notes : text
+  * created_at : timestamptz
+  * updated_at : timestamptz
+}
+
+entity appointments {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  * contact_id : uuid <<FK>>
+  * professional_id : uuid <<FK>>
+  * procedure_id : uuid <<FK>>
+  room_id : uuid <<FK>>
+  * modality : appointment_modality
+  * status : appointment_status
+  * channel : appointment_channel
+  * starts_at : timestamptz
+  * ends_at : timestamptz
+  * buffer_min : int
+  * busy_start : timestamptz
+  * busy_end : timestamptz
+  insurance : text
+  price : numeric
+  address_cep … address_state : text
+  notes : text
+  cancel_reason : text
+  cancelled_at : timestamptz
+  created_by : uuid
+  google_event_id : text
+  google_synced_at : timestamptz
+  google_sync_error : text
+  * created_at : timestamptz
+  * updated_at : timestamptz
+}
+
+entity schedule_events {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  professional_id : uuid <<FK>>
+  room_id : uuid <<FK>>
+  * kind : event_kind
+  * title : text
+  * starts_at : timestamptz
+  * ends_at : timestamptz
+  notes : text
+  created_by : uuid
+  * created_at : timestamptz
+}
+
+entity waitlist {
+  * id : uuid <<PK>>
+  --
+  * clinic_id : uuid <<FK>>
+  * contact_id : uuid <<FK>>
+  professional_id : uuid <<FK>>
+  procedure_id : uuid <<FK>>
+  desired_date : date
+  desired_from : time
+  desired_to : time
+  notes : text
+  * status : waitlist_status
+  * created_at : timestamptz
+}
+
+users ||--o| platform_admins
+users ||--o{ clinic_members
+clinics ||--o{ clinic_members
+users |o--o{ professionals
+
+clinics ||--o{ professionals
+clinics ||--o{ rooms
+clinics ||--o{ procedures
+clinics ||--o{ contacts
+clinics ||--o{ appointments
+clinics ||--o{ schedule_events
+clinics ||--o{ waitlist
+
+professionals ||--o{ working_hours
+professionals ||--o{ professional_breaks
+professionals ||--o{ professional_procedures
+procedures ||--o{ professional_procedures
+procedures ||--o{ procedure_rooms
+rooms ||--o{ procedure_rooms
+
+contacts ||--o{ appointments
+professionals ||--o{ appointments
+procedures ||--o{ appointments
+rooms |o--o{ appointments
+
+professionals |o--o{ schedule_events
+rooms |o--o{ schedule_events
+
+contacts ||--o{ waitlist
+professionals |o--o{ waitlist
+procedures |o--o{ waitlist
+
+note bottom of appointments
+  Restrições de exclusão (btree_gist) sobre
+  [busy_start, busy_end) por profissional e por sala,
+  ignorando cancelados: impedem overbooking (RNF03).
+end note
+@enduml

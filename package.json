@@ -1,0 +1,12 @@
+{
+  "name": "salus-et-qualitas-root",
+  "private": true,
+  "scripts": {
+    "web": "npm --prefix app run web",
+    "android": "npm --prefix app run android",
+    "ios": "npm --prefix app run ios",
+    "start": "npm --prefix app run start",
+    "lint": "npm --prefix app run lint",
+    "typecheck": "npm --prefix app run typecheck"
+  }
+}

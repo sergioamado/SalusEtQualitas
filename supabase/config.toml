@@ -1,0 +1,9 @@
+# Configuração usada pela CLI do Supabase ao publicar as Edge Functions.
+
+[functions.google-calendar-sync]
+# Chamada pelo gatilho do banco (autenticada pelo header x-webhook-secret)
+# e pelo painel (a função valida o usuário internamente).
+verify_jwt = false
+
+[functions.admin-users]
+verify_jwt = true

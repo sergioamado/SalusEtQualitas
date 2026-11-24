@@ -1,0 +1,7 @@
+# Chave da conta de serviço do Google (segredo, nunca versionar)
+chave-conta-servico.json
+*service-account*.json
+.env
+node_modules/
+supabase/.temp/
+supabase/.branches/

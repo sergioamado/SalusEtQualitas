@@ -89,7 +89,9 @@ function PanelHeader({
   const pathname = usePathname();
   const base = `/painel/${clinic.id}`;
   const tabs = [
-    { href: base, label: 'Agendamentos' },
+    { href: base, label: 'Agenda' },
+    { href: `${base}/agendamentos`, label: 'Pedidos recebidos' },
+    { href: `${base}/espera`, label: 'Lista de espera' },
     ...(canManage
       ? [
           { href: `${base}/servicos`, label: 'Serviços' },

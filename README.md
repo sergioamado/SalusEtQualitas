@@ -19,8 +19,8 @@ supabase/   Banco de dados: migrations e dados de demonstração
 | Google Agenda do gerente | — | ✅ |
 | Cadastro de serviços (foto, vídeo do YouTube, o que aparece no link) | — | ✅ |
 | Cadastro de profissionais, salas e horários (inclui clínica de uma pessoa só) | RF13 | ✅ |
-| Agenda interna completa (calendário) | RF01–RF07, RNF04 (arrastar) | ⏳ próxima |
-| Dashboard | RF14 | ⏳ |
+| Agenda interna: calendário dia/semana/lista, filtros, encaixe, bloqueios, lista de espera, arrastar | RF01–RF07, RNF04 | ✅ |
+| Dashboard | RF14 | ⏳ próxima |
 
 ## Como rodar
 
@@ -154,6 +154,22 @@ Aba **Profissionais e horários** (gerente da clínica e gerente do sistema):
 - Salas: opcional. Só faz sentido quando várias pessoas dividem o espaço.
 
 `save_professional(jsonb)` grava perfil, serviços, horários e pausas numa transação só, respeitando o RLS.
+
+## Etapa 4 — Agenda
+
+Rode `supabase/migrations/20261124020000_agenda.sql`.
+
+A página inicial de cada clínica no painel agora é a **Agenda**:
+- **Visões:** Dia (uma coluna por profissional), Semana (os dias lado a lado, com a cor de cada profissional) e Lista, mais confortável no celular. Fora do expediente e nas pausas, a grade aparece sombreada, e uma linha vermelha marca a hora atual.
+- **Agendar pela recepção:** toque num horário vazio ou em **+ Agendar**. Dá para buscar o paciente por nome, telefone ou e-mail, ou cadastrar um novo. Se o telefone ou e-mail já existir, o cadastro é reaproveitado (RN01). Também se registra o canal (telefone, WhatsApp, Instagram…), a duração, o valor, o convênio e as observações.
+- **Encaixe:** fora do expediente, na pausa ou num bloqueio, o sistema pede confirmação ("Encaixar mesmo assim"). Um horário em que o profissional já tem outro atendimento, ou sem sala livre, é sempre recusado (RN03/RNF03).
+- **Remarcar:** no computador, arraste o bloco para outro horário ou, na visão Dia, para outro profissional (RNF04). No celular, use "Editar / remarcar".
+- **Situação (RF05):** agendado, aguardando aprovação, confirmado, concluído, não compareceu e cancelado (com motivo). Ao cancelar, a agenda avisa se há pacientes na lista de espera.
+- **Bloqueios (RF07):** folga, feriado, reunião ou outro, para um profissional ou para a clínica inteira, de dia inteiro ou num horário. O link público não oferece esses horários.
+- **Filtros (RF04):** situação, profissional, paciente, serviço e sala.
+- **Lista de espera (RF06):** aba própria. "Encaixar na agenda" abre o agendamento já preenchido e tira o paciente da lista.
+- **Tempo real:** agendamentos feitos pelo link aparecem na agenda na hora.
+- Quem tem o papel *Profissional* abre a agenda já filtrada na própria coluna.
 
 ## Como o portal funciona
 

@@ -124,3 +124,27 @@ export const isValidTime = (value: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v
 
 /** "08:00:00" (Postgres) -> "08:00" */
 export const shortTime = (value: string) => value.slice(0, 5);
+
+// ---------------------------------------------------------------------
+// Datas digitadas (DD/MM/AAAA)
+// ---------------------------------------------------------------------
+
+export function maskDate(value: string): string {
+  const d = onlyDigits(value).slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+/** "31/12/2026" -> "2026-12-31" (ou null se inválida). */
+export function brToDateKey(value: string): string | null {
+  const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy] = m;
+  const date = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+  if (date.getUTCDate() !== Number(dd) || date.getUTCMonth() !== Number(mm) - 1) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** "2026-12-31" -> "31/12/2026" */
+export const dateKeyToBr = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;

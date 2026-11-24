@@ -1,5 +1,6 @@
-import { AppointmentsInbox } from '@/features/panel/AppointmentsInbox';
+import { AgendaScreen } from '@/features/agenda/AgendaScreen';
 
-export default function ClinicAppointmentsScreen() {
-  return <AppointmentsInbox />;
+/** Página inicial da clínica: a agenda. */
+export default function ClinicAgendaRoute() {
+  return <AgendaScreen />;
 }

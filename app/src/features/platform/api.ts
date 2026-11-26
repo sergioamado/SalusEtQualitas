@@ -114,7 +114,41 @@ export type PlatformSettings = {
   billing_instructions: string | null;
   grace_days: number;
   remind_days: number;
+  protect_ip_hour: number;
+  protect_ip_day: number;
+  protect_contact_day: number;
+  protect_active_per_contact: number;
+  protect_clinic_hour: number;
+  captcha_enabled: boolean;
+  captcha_site_key: string | null;
 };
+
+export type ProtectionStats = {
+  blocked_24h: number;
+  blocked_7d: number;
+  bookings_24h: number;
+  by_reason: Record<string, number>;
+  by_clinic: { name: string; slug: string; n: number }[];
+};
+
+export const BLOCK_REASON: Record<string, string> = {
+  RATE_LIMITED: 'Muitos pedidos da mesma conexão',
+  CONTACT_LIMIT: 'Muitos pedidos do mesmo e-mail/telefone',
+  TOO_MANY_ACTIVE: 'Paciente com muitos horários em aberto',
+  CLINIC_BUSY: 'Pico de pedidos na clínica',
+};
+
+/** O captcha só pode ser ligado se a função public-book estiver publicada com a chave secreta. */
+export async function checkCaptchaReady(): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('public-book', { body: { check: true } });
+  return !error && !!(data as { configured?: boolean } | null)?.configured;
+}
+
+export async function fetchProtectionStats(): Promise<ProtectionStats> {
+  const { data, error } = await supabase.rpc('platform_protection_stats');
+  if (error) fail('Não foi possível carregar a proteção do link.', error);
+  return data as ProtectionStats;
+}
 
 export type SupportInfo = {
   product_name: string;

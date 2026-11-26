@@ -24,6 +24,7 @@ import {
   type Slot,
 } from './api';
 import { BookingShell, type ShellProps } from './BookingShell';
+import { Captcha } from './Captcha';
 
 type CepState = 'idle' | 'loading' | 'found' | 'not_found' | 'error';
 
@@ -66,6 +67,9 @@ export function DetailsStep({
   const [showErrors, setShowErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const captchaKey = clinic.captcha_site_key;
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
 
   const numberRef = useRef<TextInputInstance>(null);
   const cepRequest = useRef(0);
@@ -119,6 +123,10 @@ export function DetailsStep({
     setShowErrors(true);
     setSubmitError(null);
     if (hasErrors) return;
+    if (captchaKey && !captchaToken) {
+      setSubmitError(new BookingError('CAPTCHA_REQUIRED').message);
+      return;
+    }
     setSubmitting(true);
     try {
       const result = await book({
@@ -132,10 +140,13 @@ export function DetailsStep({
         phone: onlyDigits(phone),
         address: home ? { ...address, cep: onlyDigits(address.cep), state: address.state.trim().toUpperCase() } : null,
         consent,
+        captchaToken: captchaKey ? captchaToken : null,
       });
       onBooked(result);
     } catch (e) {
       const error = e instanceof BookingError ? e : new BookingError('UNKNOWN');
+      // Cada token do captcha vale uma vez: gera outro para a próxima tentativa.
+      if (captchaKey) setCaptchaRound((r) => r + 1);
       if (error.code === 'SLOT_UNAVAILABLE') onSlotTaken(error);
       else setSubmitError(error.message);
     } finally {
@@ -274,6 +285,7 @@ export function DetailsStep({
         conforme a LGPD.
       </Checkbox>
       {err('consent') ? <Notice tone="danger">{errors.consent}</Notice> : null}
+      {captchaKey ? <Captcha siteKey={captchaKey} round={captchaRound} onToken={setCaptchaToken} /> : null}
       {submitError ? <Notice tone="danger">{submitError}</Notice> : null}
     </BookingShell>
   );

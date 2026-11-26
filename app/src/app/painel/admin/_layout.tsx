@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth';
 const TABS = [
   { href: '/painel/admin', label: 'Clínicas e uso' },
   { href: '/painel/admin/planos', label: 'Planos' },
-  { href: '/painel/admin/configuracoes', label: 'Suporte e cobrança' },
+  { href: '/painel/admin/configuracoes', label: 'Suporte, cobrança e proteção' },
 ] as const;
 
 /** Área do gerente do sistema: só para platform_admins. */

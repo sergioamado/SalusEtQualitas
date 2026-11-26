@@ -46,6 +46,8 @@ export type PublicClinic = {
   instagram: string | null;
   about: string | null;
   gallery: GalleryPhoto[];
+  /** Chave pública do captcha quando a proteção extra está ligada. */
+  captcha_site_key: string | null;
   procedures: PublicProcedure[];
   professionals: PublicProfessional[];
 };
@@ -77,6 +79,8 @@ export type BookingInput = {
   phone: string;
   address: Address | null;
   consent: boolean;
+  /** Token do captcha (Turnstile), quando exigido. */
+  captchaToken?: string | null;
 };
 
 export type BookingResult = {
@@ -103,6 +107,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_EMAIL: 'Informe um e-mail válido.',
   INVALID_PHONE: 'Informe um telefone com DDD.',
   INVALID_ADDRESS: 'Preencha o endereço completo do atendimento.',
+  RATE_LIMITED: 'Muitos pedidos foram feitos a partir desta conexão. Tente novamente mais tarde ou fale com a clínica.',
+  CONTACT_LIMIT: 'Você já fez vários pedidos hoje com este e-mail ou telefone. Fale com a clínica para agendar mais.',
+  TOO_MANY_ACTIVE: 'Você já tem horários marcados nesta clínica. Para agendar mais, fale com a clínica.',
+  CLINIC_BUSY: 'A clínica está recebendo muitos pedidos agora. Tente de novo em alguns minutos.',
+  CAPTCHA_REQUIRED: 'Confirme que você não é um robô para concluir.',
+  CAPTCHA_FAILED: 'Não foi possível confirmar que você não é um robô. Tente de novo.',
+  CAPTCHA_NOT_CONFIGURED: 'O agendamento online está em manutenção. Tente mais tarde ou fale com a clínica.',
 };
 
 export class BookingError extends Error {
@@ -141,7 +152,7 @@ export async function fetchSlots(params: {
 }
 
 export async function book(input: BookingInput): Promise<BookingResult> {
-  const { data, error } = await supabase.rpc('public_book', {
+  const params = {
     p_slug: input.slug,
     p_procedure_id: input.procedureId,
     p_professional_id: input.professionalId,
@@ -152,7 +163,25 @@ export async function book(input: BookingInput): Promise<BookingResult> {
     p_phone: input.phone,
     p_address: input.address,
     p_consent: input.consent,
-  });
+  };
+
+  // Com captcha: a Edge Function confere o token e faz o agendamento.
+  if (input.captchaToken) {
+    const { data, error } = await supabase.functions.invoke('public-book', {
+      body: { ...params, captcha_token: input.captchaToken },
+    });
+    if (error) {
+      const ctx = (error as { context?: Response }).context;
+      const payload = ctx && typeof ctx.json === 'function' ? await ctx.json().catch(() => null) : null;
+      throw toBookingError({ message: payload?.error ?? error.message });
+    }
+    if (data?.error) throw new BookingError(String(data.error));
+    return data as BookingResult;
+  }
+
+  const { data, error } = await supabase.rpc('public_book', params);
   if (error) throw toBookingError(error);
+  // Bloqueios da proteção do link voltam como { error: "CÓDIGO" }.
+  if (data && typeof data === 'object' && 'error' in data) throw new BookingError(String((data as { error: string }).error));
   return data as BookingResult;
 }

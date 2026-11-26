@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Card, Field, Loading, Muted, Notice, Screen, SectionLabel, Title } from '@/components/ui';
+import { Button, Card, Field, Loading, Muted, Notice, Screen, SectionLabel, Title, ToggleRow } from '@/components/ui';
 import { Space } from '@/constants/theme';
-import { fetchSettings, saveSettings, type PlatformSettings } from '@/features/platform/api';
+import {
+  BLOCK_REASON,
+  checkCaptchaReady,
+  fetchProtectionStats,
+  fetchSettings,
+  saveSettings,
+  type PlatformSettings,
+  type ProtectionStats,
+} from '@/features/platform/api';
 import { isValidEmail, maskPhone, onlyDigits } from '@/lib/format';
 
 /** Contato de suporte e dados de cobrança mostrados às clínicas. */
@@ -22,7 +30,7 @@ export default function PlatformSettingsScreen() {
 
   return (
     <Screen wide safeTop={false}>
-      <Title>Suporte e cobrança</Title>
+      <Title>Suporte, cobrança e proteção</Title>
       {loaded?.error ? (
         <Notice tone="danger">{loaded.error}</Notice>
       ) : !loaded?.settings ? (
@@ -51,6 +59,10 @@ function SettingsForm({ initial }: { initial: PlatformSettings }) {
     const remind = Number(s.remind_days);
     if (!Number.isInteger(grace) || grace < 0 || grace > 60) return setMsg({ tone: 'danger', text: 'Tolerância: de 0 a 60 dias.' });
     if (!Number.isInteger(remind) || remind < 0 || remind > 30) return setMsg({ tone: 'danger', text: 'Aviso: de 0 a 30 dias.' });
+    const limits = [s.protect_ip_hour, s.protect_ip_day, s.protect_contact_day, s.protect_active_per_contact, s.protect_clinic_hour];
+    if (limits.some((n) => !Number.isInteger(n) || n < 1)) return setMsg({ tone: 'danger', text: 'Os limites da proteção precisam ser maiores que zero.' });
+    if (s.captcha_enabled && !text(s.captcha_site_key))
+      return setMsg({ tone: 'danger', text: 'Para exigir o captcha, informe a chave do site (Site Key) do Turnstile.' });
     setBusy(true);
     try {
       await saveSettings({
@@ -65,6 +77,13 @@ function SettingsForm({ initial }: { initial: PlatformSettings }) {
         billing_instructions: text(s.billing_instructions),
         grace_days: grace,
         remind_days: remind,
+        protect_ip_hour: s.protect_ip_hour,
+        protect_ip_day: s.protect_ip_day,
+        protect_contact_day: s.protect_contact_day,
+        protect_active_per_contact: s.protect_active_per_contact,
+        protect_clinic_hour: s.protect_clinic_hour,
+        captcha_enabled: s.captcha_enabled,
+        captcha_site_key: text(s.captcha_site_key),
       });
       setMsg({ tone: 'success', text: 'Configurações salvas.' });
     } catch (e) {
@@ -168,10 +187,129 @@ function SettingsForm({ initial }: { initial: PlatformSettings }) {
             />
           </View>
         </Card>
+        <ProtectionCard s={s} set={set} />
         {msg ? <Notice tone={msg.tone}>{msg.text}</Notice> : null}
         <Button label="Salvar configurações" loading={busy} onPress={save} />
       </View>
     </View>
+  );
+}
+
+function NumberField({ label, value, onChange, hint }: { label: string; value: number; onChange: (n: number) => void; hint?: string }) {
+  return (
+    <Field
+      label={label}
+      value={value ? String(value) : ''}
+      onChangeText={(v) => onChange(Number(v.replace(/\D/g, '').slice(0, 4) || 0))}
+      keyboardType="number-pad"
+      style={styles.flex}
+      hint={hint}
+    />
+  );
+}
+
+/** Limites do link público, captcha e tentativas barradas. */
+function ProtectionCard({
+  s,
+  set,
+}: {
+  s: PlatformSettings;
+  set: <K extends keyof PlatformSettings>(k: K, v: PlatformSettings[K]) => void;
+}) {
+  const [stats, setStats] = useState<ProtectionStats | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [captchaNote, setCaptchaNote] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchProtectionStats()
+      .then((r) => active && setStats(r))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <Card>
+      <SectionLabel>Proteção do link de agendamento</SectionLabel>
+      {stats ? (
+        <View style={{ gap: 4 }}>
+          <Muted>
+            Últimas 24 h: {stats.bookings_24h} agendamentos pelo link · {stats.blocked_24h} tentativas barradas. Últimos 7
+            dias: {stats.blocked_7d} barradas.
+          </Muted>
+          {Object.entries(stats.by_reason).map(([reason, n]) => (
+            <Muted key={reason} style={{ fontSize: 13 }}>
+              • {BLOCK_REASON[reason] ?? reason}: {n}
+            </Muted>
+          ))}
+          {stats.by_clinic.length ? (
+            <Muted style={{ fontSize: 13 }}>
+              Clínicas mais visadas: {stats.by_clinic.map((c) => `${c.name} (${c.n})`).join(', ')}
+            </Muted>
+          ) : null}
+        </View>
+      ) : null}
+      <Muted style={{ fontSize: 13 }}>
+        Limites aplicados no servidor (valem até para robôs que não passam pelo site). Conexões, e-mails e telefones ficam
+        guardados só embaralhados e são apagados em 7 dias.
+      </Muted>
+      <View style={styles.row}>
+        <NumberField label="Pedidos por conexão / hora" value={s.protect_ip_hour} onChange={(n) => set('protect_ip_hour', n)} />
+        <NumberField label="Pedidos por conexão / dia" value={s.protect_ip_day} onChange={(n) => set('protect_ip_day', n)} />
+      </View>
+      <View style={styles.row}>
+        <NumberField
+          label="Pedidos por e-mail ou telefone / dia"
+          value={s.protect_contact_day}
+          onChange={(n) => set('protect_contact_day', n)}
+        />
+        <NumberField
+          label="Horários em aberto por paciente"
+          value={s.protect_active_per_contact}
+          onChange={(n) => set('protect_active_per_contact', n)}
+          hint="Na mesma clínica, contando só os futuros."
+        />
+      </View>
+      <NumberField
+        label="Pedidos por clínica / hora (freio contra ataque)"
+        value={s.protect_clinic_hour}
+        onChange={(n) => set('protect_clinic_hour', n)}
+      />
+
+      <ToggleRow
+        label="Exigir captcha (“não sou um robô”)"
+        description="Cloudflare Turnstile, grátis. Na maioria das vezes confirma sozinho, sem o paciente clicar em nada."
+        value={s.captcha_enabled}
+        onChange={async (v) => {
+          setCaptchaNote(null);
+          if (!v) return set('captcha_enabled', false);
+          setChecking(true);
+          const ready = await checkCaptchaReady();
+          setChecking(false);
+          if (ready) set('captcha_enabled', true);
+          else
+            setCaptchaNote(
+              'Ainda não dá para ligar: falta publicar a função public-book com a chave secreta (TURNSTILE_SECRET_KEY) no Supabase. Veja o passo a passo no README.',
+            );
+        }}
+      />
+      {checking ? <Muted style={{ fontSize: 13 }}>Conferindo a configuração…</Muted> : null}
+      {captchaNote ? <Notice tone="warning">{captchaNote}</Notice> : null}
+      <Field
+        label="Chave do site (Site Key) do Turnstile"
+        value={s.captcha_site_key ?? ''}
+        onChangeText={(v) => set('captcha_site_key', v.trim())}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder="0x4AAAAAAA…"
+      />
+      {s.captcha_enabled ? (
+        <Muted style={{ fontSize: 13 }}>
+          Configuração conferida. Clique em “Salvar configurações” para valer. Para desligar, é só desmarcar e salvar.
+        </Muted>
+      ) : null}
+    </Card>
   );
 }
 

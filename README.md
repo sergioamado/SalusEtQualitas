@@ -24,6 +24,7 @@ supabase/   Banco de dados: migrations e dados de demonstração
 | Página da clínica no link (capa, fotos do espaço, serviços, equipe, contato) | RF08 | ✅ |
 | Esqueci minha senha (link por e-mail) e Minha conta (trocar senha) | — | ✅ |
 | Gestão da plataforma: planos, cobrança manual, suspensão por atraso, uso/saúde das clínicas, suporte, exclusão | — | ✅ |
+| Proteção do link público (limites no servidor + captcha opcional) | RNF05 | ✅ |
 
 ## Como rodar
 
@@ -292,6 +293,40 @@ Regras no banco:
 - Só o gerente do sistema muda situação, plano e vencimentos (gatilho `clinics_guard`).
 - Uma clínica suspensa não consegue religar o link.
 - Os acessos ao link são contados por dia em `portal_daily_stats`, sem dados pessoais.
+
+## Proteção do link público
+
+Migration: `supabase/migrations/20261126020000_protecao_link.sql`.
+
+### Limites no servidor (sempre ligados)
+
+O site chama `public_book`. A função antiga virou `_public_book_core`, fechada para o público. Antes de agendar, o servidor confere:
+
+| Limite (padrão) | Código | Mensagem ao paciente |
+|---|---|---|
+| 6 pedidos por conexão (IP) por hora e 20 por dia | `RATE_LIMITED` | Muitos pedidos desta conexão |
+| 4 pedidos por e-mail ou telefone por dia | `CONTACT_LIMIT` | Já fez vários pedidos hoje |
+| 3 horários futuros em aberto por paciente na clínica | `TOO_MANY_ACTIVE` | Já tem horários marcados |
+| 40 pedidos por clínica por hora | `CLINIC_BUSY` | Muitos pedidos agora |
+
+- Os limites são ajustáveis em **Gerente do sistema → Suporte, cobrança e proteção**, onde também aparecem as tentativas barradas.
+- O IP vem do cabeçalho `cf-connecting-ip`, que o Supabase recebe pelo Cloudflare e o visitante não consegue forjar.
+- IPs, e-mails e telefones ficam em `public_rate_events` só como hash (SHA-256 com a chave `salus_rate_salt` do Vault). A rotina `salus-rate-cleanup` os apaga após 7 dias.
+- Os acessos ao link contam uma vez por conexão, por clínica, por dia.
+
+### Captcha (opcional, Cloudflare Turnstile, grátis)
+
+Ligue se aparecer abuso mesmo com os limites:
+
+1. No Cloudflare, em **Turnstile → Add widget**, cadastre os domínios `salusetqualitas.expo.app` e `localhost`, no modo **Managed**. Anote a **Site Key** e a **Secret Key**.
+2. Cadastre o segredo e publique a função:
+   ```bash
+   npx supabase secrets set --project-ref SEU-PROJETO TURNSTILE_SECRET_KEY=a-secret-key
+   npx supabase functions deploy public-book --project-ref SEU-PROJETO --no-verify-jwt
+   ```
+3. No painel, cole a **Site Key** e ligue **Exigir captcha**.
+
+Com o captcha ligado, `public_book` recusa chamadas diretas (`CAPTCHA_REQUIRED`). O site passa a agendar pela Edge Function `public-book`, que confere o token no Cloudflare e chama `public_book_verified`, aplicando os mesmos limites.
 
 ## Como o portal funciona
 

@@ -52,7 +52,16 @@ Portal de demonstração: `http://localhost:8081/agendar/demo`
 
 ### 3. Publicar
 
-- **Web / link público:** `npx expo export --platform web` gera `app/dist/`, que pode ser hospedado em qualquer site estático com HTTPS (Vercel, Netlify, Cloudflare Pages). Configure o host para redirecionar todas as rotas para `index.html`.
+- **Web (no ar):** https://salusetqualitas.expo.app, hospedado no EAS Hosting da Expo.
+  - Projeto `@a2-innovation-technologies/salus-et-qualitas`.
+  - Painel: https://expo.dev/accounts/a2-innovation-technologies/projects/salus-et-qualitas/hosting
+  - Link de uma clínica: `https://salusetqualitas.expo.app/agendar/<link-da-clinica>`.
+  - **Atualizar o site:** na raiz do repositório, `npm run publicar`. Ele gera `app/dist/` com `expo export -p web` e publica em produção. Na primeira vez no computador, rode antes `npx eas-cli@latest login`.
+  - Voltar para uma versão anterior: no painel de Hosting, escolha a versão e promova para produção.
+  - Domínio próprio (ex.: `agenda.a2tech.com.br`): só nos planos pagos da Expo.
+  - No Supabase, em **Authentication → URL Configuration**:
+    - **Site URL:** `https://salusetqualitas.expo.app`
+    - **Redirect URLs:** `https://salusetqualitas.expo.app/redefinir-senha` e `http://localhost:8081/redefinir-senha`
 - **Lojas:** `npx eas-cli@latest build -p android` e `npx eas-cli@latest build -p ios`. Não é preciso ter Mac para isso.
 
 ## Etapa 2 — login, painel e Google Agenda

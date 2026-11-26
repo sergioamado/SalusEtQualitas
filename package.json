@@ -7,6 +7,7 @@
     "ios": "npm --prefix app run ios",
     "start": "npm --prefix app run start",
     "lint": "npm --prefix app run lint",
-    "typecheck": "npm --prefix app run typecheck"
+    "typecheck": "npm --prefix app run typecheck",
+    "publicar": "npm --prefix app run publicar"
   }
 }

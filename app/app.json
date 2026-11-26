@@ -47,6 +47,17 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "db112ad3-6014-4268-a44a-d2bf1fce1cfa"
+      }
+    },
+    "owner": "a2-innovation-technologies"
   }
 }

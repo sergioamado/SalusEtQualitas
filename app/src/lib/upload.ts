@@ -10,11 +10,11 @@ const ALLOWED: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png
  * Abre a galeria, envia a imagem para clinic-assets/<clinicId>/ e devolve a URL pública.
  * Retorna null se o usuário desistir. Deve ser chamada a partir de um toque (exigência da web).
  */
-export async function pickAndUploadImage(clinicId: string, kind: 'logo' | 'cover' | 'service'): Promise<string | null> {
+export async function pickAndUploadImage(clinicId: string, kind: 'logo' | 'cover' | 'service' | 'gallery' | 'professional'): Promise<string | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsEditing: true,
-    aspect: kind === 'logo' ? [1, 1] : [16, 9],
+    aspect: kind === 'logo' || kind === 'professional' ? [1, 1] : kind === 'gallery' ? [4, 3] : [16, 9],
     quality: 0.8,
   });
   if (result.canceled || !result.assets?.length) return null;

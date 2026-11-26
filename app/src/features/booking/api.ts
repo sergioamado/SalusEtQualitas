@@ -18,15 +18,20 @@ export type PublicProfessional = {
   id: string;
   name: string;
   specialty: string | null;
+  photo_url: string | null;
+  bio: string | null;
   home_care_enabled: boolean;
   procedure_ids: string[];
 };
+
+export type GalleryPhoto = { url: string; caption?: string | null };
 
 export type PublicClinic = {
   id: string;
   slug: string;
   name: string;
   phone: string | null;
+  email: string | null;
   address: string | null;
   timezone: string;
   max_days_ahead: number;
@@ -39,6 +44,8 @@ export type PublicClinic = {
   welcome_message: string | null;
   whatsapp: string | null;
   instagram: string | null;
+  about: string | null;
+  gallery: GalleryPhoto[];
   procedures: PublicProcedure[];
   professionals: PublicProfessional[];
 };

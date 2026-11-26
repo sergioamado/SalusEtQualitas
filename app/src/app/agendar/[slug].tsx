@@ -5,6 +5,7 @@ import { Button, Loading, Muted, Notice, Screen, Title } from '@/components/ui';
 import { fetchClinic, type PublicClinic } from '@/features/booking/api';
 import { BookingFlow } from '@/features/booking/BookingFlow';
 import { BrandProvider } from '@/lib/brand';
+import { supabase } from '@/lib/supabase';
 
 /** RF08: link público de agendamento da clínica — /agendar/<slug> */
 export default function PublicBookingScreen() {
@@ -12,6 +13,11 @@ export default function PublicBookingScreen() {
   const [attempt, setAttempt] = useState(0);
   const key = `${slug}|${attempt}`;
   const [response, setResponse] = useState<{ key: string; clinic?: PublicClinic | null; error?: string }>();
+
+  // Conta um acesso por abertura do link (só número, sem dados pessoais).
+  useEffect(() => {
+    if (slug) supabase.rpc('public_track_view', { p_slug: String(slug) }).then(() => {});
+  }, [slug]);
 
   useEffect(() => {
     let active = true;

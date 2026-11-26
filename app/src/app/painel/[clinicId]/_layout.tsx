@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Loading, Muted, Notice, Screen, Text, Title } from '@/components/ui';
 import { MaxPanelWidth, Radius, Space, usePalette } from '@/constants/theme';
 import { ClinicContext, type ClinicRow } from '@/features/panel/clinic-context';
+import { BillingBanner } from '@/features/platform/BillingBanner';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
@@ -69,6 +70,7 @@ export default function ClinicPanelLayout() {
   return (
     <ClinicContext.Provider value={value}>
       <PanelHeader clinic={value.clinic} canManage={canManage} isPlatformAdmin={isPlatformAdmin} onSignOut={signOut} />
+      <BillingBanner clinic={value.clinic} canManage={canManage} />
       <Slot />
     </ClinicContext.Provider>
   );
@@ -112,10 +114,16 @@ function PanelHeader({
             {clinic.name}
           </Text>
           {isPlatformAdmin ? (
-            <Pressable accessibilityRole="link" onPress={() => router.replace('/painel/admin')} hitSlop={8}>
-              <Text style={[styles.link, { color: c.primary }]}>Todas as clínicas</Text>
+            <Pressable accessibilityRole="link" onPress={() => router.replace(`/painel/admin/clinica/${clinic.id}`)} hitSlop={8}>
+              <Text style={[styles.link, { color: c.primary }]}>Gerenciar (admin)</Text>
             </Pressable>
           ) : null}
+          <Pressable accessibilityRole="link" onPress={() => router.push('/painel/ajuda')} hitSlop={8}>
+            <Text style={[styles.link, { color: c.textMuted }]}>Ajuda</Text>
+          </Pressable>
+          <Pressable accessibilityRole="link" onPress={() => router.push('/painel/conta')} hitSlop={8}>
+            <Text style={[styles.link, { color: c.textMuted }]}>Minha conta</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" onPress={onSignOut} hitSlop={8}>
             <Text style={[styles.link, { color: c.textMuted }]}>Sair</Text>
           </Pressable>

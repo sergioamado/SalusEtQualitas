@@ -21,6 +21,9 @@ supabase/   Banco de dados: migrations e dados de demonstração
 | Cadastro de profissionais, salas e horários (inclui clínica de uma pessoa só) | RF13 | ✅ |
 | Agenda interna: calendário dia/semana/lista, filtros, encaixe, bloqueios, lista de espera, arrastar | RF01–RF07, RNF04 | ✅ |
 | Dashboard | RF14 | ✅ |
+| Página da clínica no link (capa, fotos do espaço, serviços, equipe, contato) | RF08 | ✅ |
+| Esqueci minha senha (link por e-mail) e Minha conta (trocar senha) | — | ✅ |
+| Gestão da plataforma: planos, cobrança manual, suspensão por atraso, uso/saúde das clínicas, suporte, exclusão | — | ✅ |
 
 ## Como rodar
 
@@ -188,6 +191,98 @@ Aba **Dashboard**. Começa na semana atual. Dá para trocar para **Quinzena** (1
   - por situação, por convênio e por canal;
   - pacientes frequentes.
 - Tudo é calculado no banco pela função `clinic_dashboard`, que respeita o isolamento entre clínicas.
+
+## Etapa 6 — Página da clínica no link
+
+Migration: `supabase/migrations/20261126000000_portal_vitrine.sql`. Ela cria `clinics.about`, `clinics.gallery` (até 12 fotos), `professionals.photo_url` e `professionals.bio`, e atualiza `public_clinic` e `save_professional`.
+
+O link `/agendar/<slug>` agora abre uma página com cara de site, em vez de ir direto para a lista de serviços:
+- **Capa:** foto grande, logomarca, mensagem de boas-vindas, botões **Agendar horário** e **WhatsApp**, e endereço.
+- **Destaques:** agendamento online, tipo de confirmação e atendimento na clínica ou em casa.
+- **Conheça a clínica:** galeria de fotos. No computador vira um mosaico; no celular, um carrossel. Tocar numa foto abre em tela cheia.
+- **Serviços:** cartões com foto ou vídeo, duração, local e preço. O botão **Agendar** já começa o passo a passo com aquele serviço.
+- **Equipe:** foto, especialidade e uma apresentação curta. Clínica de uma pessoa só ganha um cartão destacado ("Prazer, eu cuido de você").
+- **Sobre e contato:** texto da clínica, "Como chegar" (Google Maps), WhatsApp, telefone, Instagram e e-mail.
+
+Os passos do agendamento ganharam uma barra com a marca da clínica, um progresso com nomes (Serviço, Local, Profissional, Horário, Seus dados) e um resumo do que já foi escolhido: ao lado no computador, no topo no celular.
+
+Onde o gerente cadastra:
+- **Clínica e aparência:** texto **Sobre a clínica** e **Fotos do espaço** (adicionar, legenda, ordem, remover; a primeira fica em destaque).
+- **Profissionais e horários:** **Foto** e **Apresentação curta** de cada profissional.
+
+## Senhas: esqueci minha senha e trocar senha
+
+Vale para todos os logins: gerente do sistema, gerentes, recepção e profissionais.
+
+- **Esqueci minha senha:** link na tela **Entrar** (`/esqueci-senha`). O Supabase envia um e-mail com um link que abre `/redefinir-senha`, onde a pessoa cria a senha nova. O link vale 1 hora e funciona uma vez. Por segurança, a tela responde igual exista ou não o e-mail.
+- **Minha conta** (`/painel/conta`): troca a senha de quem já está logado. Há um botão no painel do gerente do sistema e o link "Minha conta" no topo do painel da clínica.
+- O gerente da clínica continua podendo definir a senha da equipe em **Equipe e acessos**.
+
+### Configuração obrigatória no Supabase (uma vez)
+
+1. **Authentication → URL Configuration**
+   - **Site URL:** o endereço do app. Hoje é `http://localhost:8081`; depois de publicar, troque pelo domínio.
+   - **Redirect URLs:** adicione `http://localhost:8081/redefinir-senha` e, depois de publicar, `https://SEU-DOMINIO/redefinir-senha`.
+2. **Authentication → Emails → Reset Password** (opcional): traduza o e-mail. Sugestão:
+   - Assunto: `Redefinir sua senha – Salus Et Qualitas`
+   - Corpo: `<h2>Redefinir senha</h2><p>Recebemos um pedido para criar uma senha nova para o seu login.</p><p><a href="{{ .ConfirmationURL }}">Criar senha nova</a></p><p>O link vale por 1 hora. Se não foi você, ignore este e-mail.</p>`
+3. **Envio de e-mails:** o servidor de e-mail padrão do Supabase só entrega para os e-mails da equipe do projeto no Supabase e manda poucos e-mails por hora. Para o gerente do sistema isso costuma bastar. Para as clínicas, configure um SMTP próprio em **Authentication → Emails → SMTP Settings** (por exemplo, Resend ou Brevo, que têm plano grátis).
+
+### Último recurso: sem acesso ao e-mail
+
+No **SQL Editor** do Supabase, defina a senha direto. Troque o e-mail e a senha antes de rodar:
+
+```sql
+update auth.users
+set encrypted_password = extensions.crypt('SenhaNova123', extensions.gen_salt('bf'))
+where email = 'admin@exemplo.com';
+```
+
+Depois de entrar, troque essa senha em **Minha conta**.
+
+## Gestão da plataforma (gerente do sistema)
+
+Migration: `supabase/migrations/20261126010000_plataforma.sql`. Ela também ativa a extensão `pg_cron` e agenda a rotina diária `salus-billing-tick`, às 06:15 de Brasília.
+
+Área `/painel/admin`, só para o gerente do sistema, com três abas:
+
+- **Clínicas e uso**
+  - Indicadores: clínicas por situação, receita mensal prevista, recebido no mês, pagamentos atrasados, clínicas com problemas, agendamentos e acessos ao link nos últimos 30 dias.
+  - **Consumo do servidor:** banco de dados e arquivos, comparados aos limites do plano grátis do Supabase.
+  - Lista de clínicas com filtros (com problemas, atrasadas, em teste, suspensas). Cada clínica mostra plano, vencimento, movimento, último acesso da equipe e avisos automáticos:
+    - link desligado;
+    - nenhum serviço no link;
+    - nenhum profissional com horário;
+    - erros do Google;
+    - acima do limite de profissionais do plano;
+    - pagamento atrasado.
+  - **Nova clínica**, com plano e dias de teste grátis.
+- **Página da clínica** (toque na clínica):
+  - **Situação:** suspender, cancelar ou reativar. Suspender tira o link do ar sem apagar nada, e reativar restaura o link como estava.
+  - **Assinatura:** plano, valor especial, dia de vencimento, próximo vencimento e fim do teste.
+  - **Pagamentos:** registrar Pix, transferência e outros meios. Por padrão avança o vencimento em 1 mês e reativa a clínica suspensa por atraso. Tem histórico, com a opção de apagar um lançamento.
+  - **Uso e saúde do link**, **Anotações internas** (só o gerente do sistema vê).
+  - **Excluir clínica:** exige digitar o link. Apaga dados, agendamentos, pacientes, pagamentos e fotos e, se marcado, os logins que não têm outra clínica. Feita pela Edge Function `admin-users` (ação `delete_clinic`).
+- **Planos:** nome, valor mensal, limite de profissionais e se está disponível.
+- **Suporte e cobrança:**
+  - contato de suporte (e-mail, WhatsApp, telefone, horário, mensagem);
+  - chave Pix, favorecido e instruções;
+  - quantos dias antes do vencimento avisar;
+  - tolerância de atraso antes da suspensão.
+
+O que a clínica vê:
+
+- Faixa no topo do painel:
+  - clínica suspensa (para todos);
+  - teste terminando, vencimento próximo ou atrasado (só para o gerente).
+- **Clínica e aparência → Plano e pagamento:** plano, valor, vencimento, chave Pix com botão de copiar e histórico de pagamentos.
+- **Ajuda** (`/painel/ajuda`) e o bloco "Precisa de ajuda?" na tela de login, com o contato do suporte.
+
+Regras no banco:
+
+- Só o gerente do sistema muda situação, plano e vencimentos (gatilho `clinics_guard`).
+- Uma clínica suspensa não consegue religar o link.
+- Os acessos ao link são contados por dia em `portal_daily_stats`, sem dados pessoais.
 
 ## Como o portal funciona
 

@@ -22,6 +22,14 @@ export type ClinicRow = {
   instagram: string | null;
   google_notify_enabled: boolean;
   google_calendar_id: string | null;
+  about: string | null;
+  gallery: { url: string; caption?: string | null }[] | null;
+  status: 'teste' | 'ativa' | 'suspensa' | 'cancelada';
+  plan_id: string | null;
+  monthly_price: number | null;
+  next_due_date: string | null;
+  trial_ends_on: string | null;
+  suspended_reason: string | null;
 };
 
 export type ClinicContextValue = {

@@ -6,6 +6,10 @@ export type ProfessionalPayload = {
   clinic_id: string;
   name: string;
   specialty?: string | null;
+  /** Ausente = não altera. */
+  photo_url?: string | null;
+  /** Ausente = não altera. */
+  bio?: string | null;
   color?: string | null;
   user_id?: string | null;
   active?: boolean;

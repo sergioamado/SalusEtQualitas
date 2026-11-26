@@ -1,11 +1,16 @@
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
+import { Pressable } from 'react-native';
 
-import { Button, Field, Loading, Muted, Notice, Screen, Title } from '@/components/ui';
+import { Button, Card, Field, Loading, Muted, Notice, Screen, SectionLabel, Text, Title } from '@/components/ui';
+import { usePalette } from '@/constants/theme';
+import { hasSupportContact, SupportContacts, useSupport } from '@/features/platform/SupportCard';
 import { useAuth } from '@/lib/auth';
 
 export default function SignInScreen() {
+  const c = usePalette();
   const { loading, session, signIn } = useAuth();
+  const support = useSupport();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +62,15 @@ export default function SignInScreen() {
         returnKeyType="go"
       />
       {error ? <Notice tone="danger">{error}</Notice> : null}
-      <Muted>Esqueceu a senha? Peça ao gerente da clínica ou do sistema para definir uma nova.</Muted>
+      <Pressable accessibilityRole="link" onPress={() => router.push('/esqueci-senha')} hitSlop={8}>
+        <Text style={{ color: c.primary, fontWeight: '600', fontSize: 15 }}>Esqueci minha senha</Text>
+      </Pressable>
+      {hasSupportContact(support) ? (
+        <Card>
+          <SectionLabel>Precisa de ajuda?</SectionLabel>
+          <SupportContacts support={support} context="acesso ao painel" />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

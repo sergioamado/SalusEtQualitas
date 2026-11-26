@@ -1,4 +1,5 @@
 import { Redirect, router } from 'expo-router';
+import { View } from 'react-native';
 
 import { Button, Muted, OptionCard, Screen, Title } from '@/components/ui';
 import { ROLE_LABEL, useAuth } from '@/lib/auth';
@@ -11,7 +12,13 @@ export default function PanelHome() {
   if (memberships.length === 1) return <Redirect href={`/painel/${memberships[0].clinic_id}`} />;
 
   return (
-    <Screen footer={<Button label="Sair" variant="secondary" onPress={signOut} />}>
+    <Screen
+      footer={
+        <View style={{ gap: 8 }}>
+          <Button label="Minha conta e senha" variant="secondary" onPress={() => router.push('/painel/conta')} />
+          <Button label="Sair" variant="secondary" onPress={signOut} />
+        </View>
+      }>
       {memberships.length === 0 ? (
         <>
           <Title>Sem acesso</Title>

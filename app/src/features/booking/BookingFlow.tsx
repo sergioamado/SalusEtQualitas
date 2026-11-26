@@ -1,6 +1,5 @@
-import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   Button,
@@ -9,9 +8,7 @@ import {
   Muted,
   Notice,
   OptionCard,
-  Screen,
   SectionLabel,
-  SummaryRow,
   Text,
   Title,
 } from '@/components/ui';
@@ -35,17 +32,23 @@ import {
   type PublicProcedure,
   type Slot,
 } from './api';
-import { ClinicHero } from './ClinicHero';
+import { BookingShell, SummaryCard, type ShellProps } from './BookingShell';
+import { Avatar, ClinicHome } from './ClinicHome';
 import { DetailsStep } from './DetailsStep';
+import { whatsappUrl } from './links';
 import { ServiceOption } from './ServiceOption';
 
-type Step = 'service' | 'modality' | 'professional' | 'datetime' | 'details' | 'done';
+type Step = 'home' | 'service' | 'modality' | 'professional' | 'datetime' | 'details' | 'done';
 const ORDER: Step[] = ['service', 'modality', 'professional', 'datetime', 'details'];
 const ANY = 'any';
 const MAX_DAYS_SHOWN = 60;
 
+/** Modalidade já definida quando o serviço só é oferecido em um local. */
+const onlyModality = (p: PublicProcedure): Modality | null =>
+  p.allows_clinic && !p.allows_home_care ? 'clinica' : !p.allows_clinic && p.allows_home_care ? 'residencial' : null;
+
 export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
-  const [step, setStep] = useState<Step>('service');
+  const [step, setStep] = useState<Step>('home');
   const [procedure, setProcedure] = useState<PublicProcedure | null>(null);
   const [modality, setModality] = useState<Modality | null>(null);
   const [professionalId, setProfessionalId] = useState<string>(ANY);
@@ -65,9 +68,21 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
     [clinic.professionals, procedure, modality],
   );
 
+  const chooseProcedure = (p: PublicProcedure) => {
+    setProcedure(p);
+    setSlot(null);
+    setProfessionalId(ANY);
+    setModality(onlyModality(p));
+  };
+
   const goBack = () => {
     const index = ORDER.indexOf(step);
-    if (index > 0) setStep(ORDER[index - 1]);
+    setStep(index > 0 ? ORDER[index - 1] : 'home');
+  };
+
+  const goHome = () => {
+    setResult(null);
+    setStep('home');
   };
 
   const restart = () => {
@@ -79,49 +94,66 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
     setStep('service');
   };
 
-  if (step === 'done' && result) {
-    return <DoneStep result={result} clinic={clinic} onRestart={restart} />;
+  if (step === 'home') {
+    return (
+      <ClinicHome
+        clinic={clinic}
+        onBook={(p) => {
+          if (p) {
+            chooseProcedure(p);
+            setStep(onlyModality(p) ? 'professional' : 'modality');
+          } else setStep('service');
+        }}
+      />
+    );
   }
 
-  const header = <StepHeader clinic={clinic} step={step} onBack={step === 'service' ? undefined : goBack} />;
+  const chosenProfessional =
+    slot?.professional_name ??
+    (professionalId !== ANY
+      ? professionals.find((p) => p.id === professionalId)?.name
+      : professionals.length === 1
+        ? professionals[0].name
+        : ORDER.indexOf(step) > 2
+          ? 'Qualquer profissional'
+          : null) ??
+    null;
+
+  const shell: ShellProps = {
+    clinic,
+    stepIndex: step === 'done' ? ORDER.length : ORDER.indexOf(step),
+    summary: { procedure, modality, professionalName: chosenProfessional, startsAt: slot?.starts_at ?? null },
+    onBack: step === 'done' ? undefined : goBack,
+    onHome: goHome,
+  };
+
+  if (step === 'done' && result) {
+    return <DoneStep result={result} clinic={clinic} shell={shell} onRestart={restart} onHome={goHome} />;
+  }
 
   if (step === 'service') {
     return (
-      <Screen
-        top={<ClinicHero clinic={clinic} />}
+      <BookingShell
+        {...shell}
         footer={<Button label="Continuar" disabled={!procedure} onPress={() => setStep('modality')} />}>
-        {header}
-        <Title>Qual serviço você deseja?</Title>
+        <StepTitle title="Qual serviço você deseja?" subtitle="Toque no serviço para selecionar." />
         {clinic.procedures.length === 0 ? (
           <Muted>Nenhum serviço disponível para agendamento online no momento.</Muted>
         ) : (
           clinic.procedures.map((p) => (
-            <ServiceOption
-              key={p.id}
-              procedure={p}
-              selected={procedure?.id === p.id}
-              onPress={() => {
-                setProcedure(p);
-                setSlot(null);
-                setProfessionalId(ANY);
-                // Pré-seleciona quando só existe uma modalidade possível.
-                setModality(p.allows_clinic && !p.allows_home_care ? 'clinica'
-                  : !p.allows_clinic && p.allows_home_care ? 'residencial'
-                  : null);
-              }}
-            />
+            <ServiceOption key={p.id} procedure={p} selected={procedure?.id === p.id} onPress={() => chooseProcedure(p)} />
           ))
         )}
-      </Screen>
+      </BookingShell>
     );
   }
 
   if (step === 'modality' && procedure) {
     return (
-      <Screen
+      <BookingShell
+        {...shell}
         footer={<Button label="Continuar" disabled={!modality} onPress={() => setStep('professional')} />}>
-        {header}
-        <Title>Onde será o atendimento?</Title>
+        <StepTitle title="Onde será o atendimento?" />
         <OptionCard
           title="Na clínica"
           subtitle={clinic.address ?? 'Atendimento presencial na clínica'}
@@ -147,22 +179,23 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
             setProfessionalId(ANY);
           }}
         />
-      </Screen>
+      </BookingShell>
     );
   }
 
   if (step === 'professional' && procedure && modality) {
     return (
-      <Screen footer={<Button label="Ver horários" onPress={() => setStep('datetime')} />}>
-        {header}
-        <Title>Com qual profissional?</Title>
+      <BookingShell
+        {...shell}
+        footer={<Button label="Ver horários" disabled={professionals.length === 0} onPress={() => setStep('datetime')} />}>
+        <StepTitle title="Com qual profissional?" />
         {professionals.length === 0 ? (
           <Notice tone="warning">Nenhum profissional disponível para esse serviço neste local.</Notice>
         ) : (
           <>
             {professionals.length > 1 ? (
-              <OptionCard
-                title="Qualquer profissional"
+              <ProfessionalOption
+                name="Qualquer profissional"
                 subtitle="Mostra mais opções de horário"
                 selected={professionalId === ANY}
                 onPress={() => {
@@ -172,10 +205,12 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
               />
             ) : null}
             {professionals.map((p) => (
-              <OptionCard
+              <ProfessionalOption
                 key={p.id}
-                title={p.name}
+                name={p.name}
                 subtitle={p.specialty}
+                bio={p.bio}
+                photoUrl={p.photo_url}
                 selected={professionalId === p.id || (professionals.length === 1 && professionalId === ANY)}
                 onPress={() => {
                   setProfessionalId(p.id);
@@ -185,15 +220,14 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
             ))}
           </>
         )}
-      </Screen>
+      </BookingShell>
     );
   }
 
   if (step === 'datetime' && procedure && modality) {
     return (
-      <Screen footer={<Button label="Continuar" disabled={!slot} onPress={() => setStep('details')} />}>
-        {header}
-        <Title>Escolha o dia e o horário</Title>
+      <BookingShell {...shell} footer={<Button label="Continuar" disabled={!slot} onPress={() => setStep('details')} />}>
+        <StepTitle title="Escolha o dia e o horário" />
         {slotNotice ? <Notice tone="warning">{slotNotice}</Notice> : null}
         <DateTimePicker
           clinic={clinic}
@@ -211,14 +245,14 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
             setSlotNotice(null);
           }}
         />
-      </Screen>
+      </BookingShell>
     );
   }
 
   if (step === 'details' && procedure && modality && slot) {
     return (
       <DetailsStep
-        header={header}
+        shell={shell}
         clinic={clinic}
         procedure={procedure}
         modality={modality}
@@ -238,48 +272,69 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
 
   // Estado inconsistente (ex.: recarregou no meio) — volta ao início.
   return (
-    <Screen>
-      {header}
+    <BookingShell {...shell}>
       <Button label="Começar agendamento" onPress={restart} />
-    </Screen>
+    </BookingShell>
   );
 }
 
-function StepHeader({ clinic, step, onBack }: { clinic: PublicClinic; step: Step; onBack?: () => void }) {
-  const c = usePalette();
-  const index = ORDER.indexOf(step);
+function StepTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <View style={styles.header}>
-      <View style={styles.headerRow}>
-        {onBack ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-            onPress={onBack}
-            hitSlop={12}
-            style={styles.back}>
-            <Text style={[styles.backText, { color: c.primary }]}>‹ Voltar</Text>
-          </Pressable>
-        ) : null}
-        {clinic.logo_url && step !== 'service' ? (
-          <Image source={{ uri: clinic.logo_url }} style={styles.miniLogo} contentFit="contain" />
-        ) : null}
-        <Text numberOfLines={1} style={[styles.clinicName, { color: c.textMuted }]}>
-          {clinic.name}
-        </Text>
-        <Text style={[styles.stepCount, { color: c.textMuted }]}>
-          {index + 1}/{ORDER.length}
-        </Text>
-      </View>
-      <View style={[styles.progressTrack, { backgroundColor: c.surfaceMuted }]}>
-        <View
-          style={[
-            styles.progressFill,
-            { backgroundColor: c.primary, width: `${((index + 1) / ORDER.length) * 100}%` },
-          ]}
-        />
-      </View>
+    <View style={{ gap: 4 }}>
+      <Title>{title}</Title>
+      {subtitle ? <Muted>{subtitle}</Muted> : null}
     </View>
+  );
+}
+
+function ProfessionalOption({
+  name,
+  subtitle,
+  bio,
+  photoUrl,
+  selected,
+  onPress,
+}: {
+  name: string;
+  subtitle?: string | null;
+  bio?: string | null;
+  photoUrl?: string | null;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const c = usePalette();
+  const any = photoUrl === undefined;
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={name}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.pro,
+        { backgroundColor: selected ? c.primarySoft : c.surface, borderColor: selected ? c.primary : c.border },
+        pressed && { opacity: 0.9 },
+      ]}>
+      {any ? (
+        <View style={[styles.anyAvatar, { borderColor: c.primary }]}>
+          <Text style={{ color: c.primary, fontSize: 22, fontWeight: '700' }}>+</Text>
+        </View>
+      ) : (
+        <Avatar professional={{ name, photo_url: photoUrl ?? null }} size={56} />
+      )}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={[styles.proName, { color: c.text }]}>{name}</Text>
+        {subtitle ? <Text style={{ color: c.textMuted, fontSize: 14 }}>{subtitle}</Text> : null}
+        {bio ? (
+          <Text numberOfLines={2} style={{ color: c.textMuted, fontSize: 13, lineHeight: 18 }}>
+            {bio}
+          </Text>
+        ) : null}
+      </View>
+      <View style={[styles.radio, { borderColor: selected ? c.primary : c.border }]}>
+        {selected ? <View style={[styles.radioDot, { backgroundColor: c.primary }]} /> : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -378,7 +433,7 @@ function DateTimePicker({
         })}
       </ScrollView>
 
-      <Muted style={{ textTransform: 'capitalize' }}>{formatDateLong(date)}</Muted>
+      <Muted>{formatDateLong(date).replace(/^./, (ch) => ch.toUpperCase())}</Muted>
 
       {error ? (
         <>
@@ -413,49 +468,63 @@ function DateTimePicker({
 function DoneStep({
   result,
   clinic,
+  shell,
   onRestart,
+  onHome,
 }: {
   result: BookingResult;
   clinic: PublicClinic;
+  shell: ShellProps;
   onRestart: () => void;
+  onHome: () => void;
 }) {
   const c = usePalette();
   const confirmed = result.status === 'agendado';
+  const wa = whatsappUrl(
+    clinic.whatsapp,
+    `Olá! Acabei de agendar ${result.procedure_name} para ${formatDateTimeLong(result.starts_at, clinic.timezone)}.`,
+  );
   return (
-    <Screen footer={<Button label="Fazer outro agendamento" variant="secondary" onPress={onRestart} />}>
-      <View style={[styles.doneIcon, { backgroundColor: confirmed ? c.successSoft : c.warningSoft }]}>
-        <Text style={{ fontSize: 32, color: confirmed ? c.success : c.warning }}>{confirmed ? '✓' : '⏳'}</Text>
+    <BookingShell
+      {...shell}
+      footer={
+        <View style={{ gap: Space.sm }}>
+          {wa ? <Button label="Falar com a clínica no WhatsApp" onPress={() => Linking.openURL(wa)} /> : null}
+          <Button label="Voltar à página da clínica" variant="secondary" onPress={onHome} />
+        </View>
+      }>
+      <View style={styles.doneHead}>
+        <View style={[styles.doneIcon, { backgroundColor: confirmed ? c.successSoft : c.warningSoft }]}>
+          <Text style={{ fontSize: 34, color: confirmed ? c.success : c.warning }}>{confirmed ? '✓' : '⏳'}</Text>
+        </View>
+        <Text accessibilityRole="header" style={[styles.doneTitle, { color: c.text }]}>
+          {confirmed ? 'Agendamento confirmado!' : 'Solicitação enviada!'}
+        </Text>
+        <Text style={[styles.doneText, { color: c.textMuted }]}>
+          {confirmed
+            ? 'Seu horário está garantido. Você receberá os detalhes no WhatsApp e no e-mail informados.'
+            : 'Seu horário está reservado. A clínica vai confirmar o agendamento pelo WhatsApp ou e-mail informados.'}
+        </Text>
       </View>
-      <Title>{confirmed ? 'Agendamento confirmado!' : 'Solicitação enviada!'}</Title>
-      <Muted>
-        {confirmed
-          ? 'Seu horário está garantido. Você receberá os detalhes no WhatsApp e no e-mail informados.'
-          : 'Seu horário está reservado. A clínica vai confirmar o agendamento pelo WhatsApp ou e-mail informados.'}
-      </Muted>
-      <View style={[styles.summary, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <SummaryRow label="Serviço" value={result.procedure_name} />
-        <SummaryRow label="Profissional" value={result.professional_name} />
-        <SummaryRow label="Quando" value={formatDateTimeLong(result.starts_at, clinic.timezone)} />
-        <SummaryRow
-          label="Local"
-          value={result.modality === 'residencial' ? 'No seu endereço (Home Care)' : result.clinic_address ?? result.clinic_name}
-        />
-      </View>
+      <SummaryCard
+        clinic={clinic}
+        title="Detalhes do agendamento"
+        summary={{
+          procedure: shell.summary.procedure,
+          modality: result.modality,
+          professionalName: result.professional_name,
+          startsAt: result.starts_at,
+        }}
+      />
       {result.clinic_phone ? <Muted>Dúvidas ou remarcação: {result.clinic_phone}</Muted> : null}
-    </Screen>
+      <Pressable accessibilityRole="button" onPress={onRestart} hitSlop={8}>
+        <Text style={{ color: c.primary, fontWeight: '700', fontSize: 15 }}>Fazer outro agendamento</Text>
+      </Pressable>
+    </BookingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { gap: Space.sm, marginBottom: Space.sm },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md, minHeight: 32 },
-  back: { paddingVertical: Space.xs },
-  backText: { fontSize: 16, fontWeight: '600' },
-  clinicName: { flex: 1, fontSize: 14, fontWeight: '600' },
-  miniLogo: { width: 28, height: 28, borderRadius: 6 },
-  stepCount: { fontSize: 13, fontVariant: ['tabular-nums'] },
-  progressTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: 4, borderRadius: 2 },
   days: { gap: Space.sm, paddingVertical: Space.xs },
   day: {
     width: 62,
@@ -468,13 +537,13 @@ const styles = StyleSheet.create({
   dayWeek: { fontSize: 12, textTransform: 'capitalize' },
   dayNum: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm },
-  doneIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Space.xl,
-  },
-  summary: { borderWidth: 1, borderRadius: Radius.lg, padding: Space.lg, gap: Space.md },
+  doneHead: { alignItems: 'center', gap: Space.sm, paddingVertical: Space.lg },
+  doneIcon: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
+  doneTitle: { fontSize: 26, fontWeight: '700', textAlign: 'center' },
+  doneText: { fontSize: 15, lineHeight: 22, textAlign: 'center', maxWidth: 460 },
+  pro: { flexDirection: 'row', alignItems: 'center', gap: Space.md, borderWidth: 1.5, borderRadius: Radius.lg, padding: Space.md },
+  proName: { fontSize: 16, fontWeight: '700' },
+  anyAvatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
 });

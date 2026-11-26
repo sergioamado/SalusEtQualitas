@@ -1,10 +1,9 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, View, type TextInputInstance } from 'react-native';
 
-import { Button, Checkbox, Field, Notice, Screen, SectionLabel, SummaryRow, Title } from '@/components/ui';
-import { Radius, Space, usePalette } from '@/constants/theme';
+import { Button, Checkbox, Field, Notice, SectionLabel, Title } from '@/components/ui';
+import { Space } from '@/constants/theme';
 import {
-  formatDateTimeLong,
   isValidEmail,
   isValidFullName,
   isValidPhone,
@@ -24,6 +23,7 @@ import {
   type PublicProcedure,
   type Slot,
 } from './api';
+import { BookingShell, type ShellProps } from './BookingShell';
 
 type CepState = 'idle' | 'loading' | 'found' | 'not_found' | 'error';
 
@@ -38,7 +38,7 @@ const EMPTY_ADDRESS: Address = {
 };
 
 export function DetailsStep({
-  header,
+  shell,
   clinic,
   procedure,
   modality,
@@ -46,7 +46,7 @@ export function DetailsStep({
   onBooked,
   onSlotTaken,
 }: {
-  header: ReactNode;
+  shell: ShellProps;
   clinic: PublicClinic;
   procedure: PublicProcedure;
   modality: Modality;
@@ -54,7 +54,6 @@ export function DetailsStep({
   onBooked: (result: BookingResult) => void;
   onSlotTaken: (error: BookingError) => void;
 }) {
-  const c = usePalette();
   const home = modality === 'residencial';
 
   const [fullName, setFullName] = useState('');
@@ -159,7 +158,8 @@ export function DetailsStep({
         : err('cep');
 
   return (
-    <Screen
+    <BookingShell
+      {...shell}
       footer={
         <Button
           label={clinic.auto_confirm ? 'Confirmar agendamento' : 'Solicitar agendamento'}
@@ -167,16 +167,7 @@ export function DetailsStep({
           onPress={submit}
         />
       }>
-      {header}
       <Title>Seus dados</Title>
-
-      <View style={[styles.summary, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <SummaryRow label={procedure.name} value={formatDateTimeLong(slot.starts_at, clinic.timezone)} />
-        <SummaryRow
-          label="Com"
-          value={`${slot.professional_name} · ${home ? 'Residencial (Home Care)' : 'Na clínica'}`}
-        />
-      </View>
 
       <Field
         label="Nome completo"
@@ -284,12 +275,11 @@ export function DetailsStep({
       </Checkbox>
       {err('consent') ? <Notice tone="danger">{errors.consent}</Notice> : null}
       {submitError ? <Notice tone="danger">{submitError}</Notice> : null}
-    </Screen>
+    </BookingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  summary: { borderWidth: 1, borderRadius: Radius.lg, padding: Space.lg, gap: Space.md },
   row: { flexDirection: 'row', gap: Space.md },
   narrow: { flex: 1 },
   wide: { flex: 2 },

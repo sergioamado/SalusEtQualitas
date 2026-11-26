@@ -28,6 +28,8 @@ import {
   type WeekSchedule,
 } from '@/lib/schedule';
 import { supabase } from '@/lib/supabase';
+import { pickAndUploadImage } from '@/lib/upload';
+import { Avatar } from '@/features/booking/ClinicHome';
 
 import { ScheduleEditor } from './ScheduleEditor';
 
@@ -41,6 +43,8 @@ type Professional = {
   public_visible: boolean;
   home_care_enabled: boolean;
   travel_buffer_min: number;
+  photo_url: string | null;
+  bio: string | null;
 };
 type Member = { user_id: string; email: string | null; full_name: string | null; role: string };
 type Data = {
@@ -271,6 +275,9 @@ function ProfessionalForm({
   const p = professional;
   const [name, setName] = useState(p?.name ?? '');
   const [specialty, setSpecialty] = useState(p?.specialty ?? '');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(p?.photo_url ?? null);
+  const [bio, setBio] = useState(p?.bio ?? '');
+  const [uploading, setUploading] = useState(false);
   const [color, setColor] = useState(p?.color ?? COLORS[data.professionals.length % COLORS.length]);
   const [userId, setUserId] = useState<string | null>(p?.user_id ?? null);
   const [active, setActive] = useState(p?.active ?? true);
@@ -302,6 +309,8 @@ function ProfessionalForm({
         clinic_id: clinicId,
         name: name.trim(),
         specialty: specialty.trim() || null,
+        photo_url: photoUrl,
+        bio: bio.trim() || null,
         color,
         user_id: userId,
         active,
@@ -335,6 +344,19 @@ function ProfessionalForm({
     onClose('Profissional excluído.');
   };
 
+  const pickPhoto = async () => {
+    setError(null);
+    setUploading(true);
+    try {
+      const url = await pickAndUploadImage(clinicId, 'professional');
+      if (url) setPhotoUrl(url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const toggle = (id: string) => setProcIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
 
   return (
@@ -344,6 +366,30 @@ function ProfessionalForm({
       <Card style={{ gap: Space.md }}>
         <Field label="Nome (como o paciente vê)" value={name} onChangeText={setName} autoCapitalize="words" />
         <Field label="Especialidade (opcional)" value={specialty} onChangeText={setSpecialty} placeholder="Ex.: Fisioterapeuta" />
+        <View style={{ gap: Space.sm }}>
+          <SectionLabel>Foto (aparece no link de agendamento)</SectionLabel>
+          <View style={styles.photoRow}>
+            <Avatar professional={{ name: name || '?', photo_url: photoUrl }} size={72} />
+            <View style={{ flex: 1, gap: Space.sm }}>
+              <Button
+                label={photoUrl ? 'Trocar foto' : 'Escolher foto'}
+                variant="secondary"
+                loading={uploading}
+                onPress={pickPhoto}
+              />
+              {photoUrl ? <Button label="Remover foto" variant="secondary" onPress={() => setPhotoUrl(null)} /> : null}
+            </View>
+          </View>
+          <Muted style={{ fontSize: 13 }}>Foto de rosto, quadrada, com boa luz. Sem foto, aparecem as iniciais.</Muted>
+        </View>
+        <Field
+          label="Apresentação curta (opcional)"
+          value={bio}
+          onChangeText={(v) => setBio(v.slice(0, 300))}
+          multiline
+          placeholder="Ex.: Fisioterapeuta há 10 anos, especialista em coluna e pós-operatório."
+          hint={`${bio.length}/300`}
+        />
         <View style={{ gap: Space.xs }}>
           <SectionLabel>Cor na agenda</SectionLabel>
           <View style={styles.colors}>
@@ -549,6 +595,7 @@ function RoomsManager({ clinicId }: { clinicId: string }) {
 }
 
 const styles = StyleSheet.create({
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
   flex: { flex: 1, gap: 2 },
   row: { flexDirection: 'row', gap: Space.md, alignItems: 'center' },
   dot: { width: 14, height: 14, borderRadius: 7 },

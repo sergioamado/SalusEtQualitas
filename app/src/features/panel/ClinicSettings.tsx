@@ -23,6 +23,8 @@ import { portalBaseUrl, supabase } from '@/lib/supabase';
 import { pickAndUploadImage, removeUploadedImage } from '@/lib/upload';
 
 import { useClinic, type ClinicRow } from './clinic-context';
+import { GalleryManager } from './GalleryManager';
+import { PlanPaymentCard } from '@/features/platform/PlanPaymentCard';
 import { GoogleCalendarGuide, normalizeCalendarId } from './GoogleCalendarGuide';
 
 const SWATCHES = [
@@ -38,6 +40,7 @@ type Form = {
   email: string;
   address: string;
   welcome_message: string;
+  about: string;
   primary_color: string;
   secondary_color: string;
   font_family: FontKey;
@@ -56,6 +59,7 @@ function toForm(c: ClinicRow): Form {
     email: c.email ?? '',
     address: c.address ?? '',
     welcome_message: c.welcome_message ?? '',
+    about: c.about ?? '',
     primary_color: c.primary_color,
     secondary_color: c.secondary_color,
     font_family: (c.font_family in FONT_OPTIONS ? c.font_family : 'system') as FontKey,
@@ -84,6 +88,7 @@ export function ClinicSettings() {
   }
 
   const portalUrl = `${portalBaseUrl()}/agendar/${clinic.slug}`;
+  const suspended = clinic.status === 'suspensa' || clinic.status === 'cancelada';
   const colorsValid = isHexColor(form.primary_color) && isHexColor(form.secondary_color);
 
   const save = async () => {
@@ -103,10 +108,11 @@ export function ClinicSettings() {
         email: form.email.trim() || null,
         address: form.address.trim() || null,
         welcome_message: form.welcome_message.trim() || null,
+        about: form.about.trim() || null,
         primary_color: form.primary_color.toUpperCase(),
         secondary_color: form.secondary_color.toUpperCase(),
         font_family: form.font_family,
-        public_booking_enabled: form.public_booking_enabled,
+        ...(suspended ? {} : { public_booking_enabled: form.public_booking_enabled }),
         public_booking_status: form.auto_confirm ? 'agendado' : 'reservado',
         google_notify_enabled: form.google_notify_enabled,
         google_calendar_id: normalizeCalendarId(form.google_calendar_id) || null,
@@ -186,12 +192,19 @@ export function ClinicSettings() {
                 </View>
               ) : null}
             </View>
-            <ToggleRow
-              label="Agendamento online ativo"
-              description="Desligue para tirar o link do ar temporariamente."
-              value={form.public_booking_enabled}
-              onChange={(v) => set('public_booking_enabled', v)}
-            />
+            {suspended ? (
+              <Notice tone="warning">
+                O link está fora do ar porque a clínica está {clinic.status === 'suspensa' ? 'suspensa' : 'com a assinatura cancelada'}.
+                Ele volta sozinho quando a clínica for reativada.
+              </Notice>
+            ) : (
+              <ToggleRow
+                label="Agendamento online ativo"
+                description="Desligue para tirar o link do ar temporariamente."
+                value={form.public_booking_enabled}
+                onChange={(v) => set('public_booking_enabled', v)}
+              />
+            )}
             <ToggleRow
               label="Confirmar automaticamente"
               description={
@@ -215,6 +228,14 @@ export function ClinicSettings() {
               placeholder="Ex.: Agende sua avaliação em poucos cliques!"
               multiline
               hint={`${form.welcome_message.length}/280`}
+            />
+            <Field
+              label="Sobre a clínica"
+              value={form.about}
+              onChangeText={(v) => set('about', v.slice(0, 1500))}
+              placeholder="Conte a história da clínica, a forma de atender, diferenciais, convênios aceitos…"
+              multiline
+              hint={`${form.about.length}/1500 · aparece na seção “Sobre” do link`}
             />
             <Field label="Endereço" value={form.address} onChangeText={(v) => set('address', v)} />
             <View style={styles.row}>
@@ -267,13 +288,17 @@ export function ClinicSettings() {
             />
             <ImageSlot
               label="Foto de fundo (capa)"
-              hint="Horizontal (16:9), aparece no topo do link de agendamento. Até 5 MB."
+              hint="Horizontal (16:9), é a foto grande do topo do link. Use a melhor foto da clínica (recepção ou fachada). Até 5 MB."
               url={clinic.cover_url}
               loading={uploading === 'cover'}
               onPick={() => uploadImage('cover')}
               onRemove={() => removeImage('cover')}
             />
           </Card>
+
+          <GalleryManager clinicId={clinic.id} photos={clinic.gallery ?? []} onChanged={reload} />
+
+          <PlanPaymentCard clinic={clinic} />
         </View>
 
         <View style={styles.col}>

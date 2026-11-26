@@ -38,7 +38,19 @@ import { DetailsStep } from './DetailsStep';
 import { whatsappUrl } from './links';
 import { ServiceOption } from './ServiceOption';
 
+// ============================================================================
+// FLUXO DE AGENDAMENTO — o "passo a passo" que o paciente percorre
+// ----------------------------------------------------------------------------
+// Ideia central: uma "máquina de estados" simples. A variável `step` diz em que
+// tela o paciente está; cada botão só muda o `step` (e guarda a escolha feita).
+//   home -> serviço -> local -> profissional -> data/hora -> seus dados -> pronto
+// Não há uma rota (URL) por passo: tudo acontece nesta mesma tela /agendar/<slug>,
+// o que deixa o fluxo rápido e impede o paciente de "pular" um passo pela URL.
+// ============================================================================
+
+// "Union type": step só pode ser um destes textos (o TypeScript reclama de erro de digitação).
 type Step = 'home' | 'service' | 'modality' | 'professional' | 'datetime' | 'details' | 'done';
+// Ordem dos passos — usada pela barra de progresso e pelo botão "Voltar".
 const ORDER: Step[] = ['service', 'modality', 'professional', 'datetime', 'details'];
 const ANY = 'any';
 const MAX_DAYS_SHOWN = 60;
@@ -48,6 +60,8 @@ const onlyModality = (p: PublicProcedure): Modality | null =>
   p.allows_clinic && !p.allows_home_care ? 'clinica' : !p.allows_clinic && p.allows_home_care ? 'residencial' : null;
 
 export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
+  // Cada useState guarda uma escolha do paciente. Quando um muda, o React
+  // redesenha a tela sozinho com o valor novo.
   const [step, setStep] = useState<Step>('home');
   const [procedure, setProcedure] = useState<PublicProcedure | null>(null);
   const [modality, setModality] = useState<Modality | null>(null);
@@ -57,6 +71,8 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
   const [slotNotice, setSlotNotice] = useState<string | null>(null);
   const [result, setResult] = useState<BookingResult | null>(null);
 
+  // useMemo = cálculo "memorizado": a lista de profissionais que fazem o serviço
+  // escolhido só é recalculada quando serviço, local ou a lista mudam.
   const professionals = useMemo(
     () =>
       clinic.professionals.filter(
@@ -94,6 +110,7 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
     setStep('service');
   };
 
+  // A partir daqui: um "if" por passo. Cada um devolve a tela daquele passo.
   if (step === 'home') {
     return (
       <ClinicHome
@@ -119,6 +136,8 @@ export function BookingFlow({ clinic }: { clinic: PublicClinic }) {
           : null) ??
     null;
 
+  // Propriedades comuns a todos os passos (cabeçalho, progresso, resumo lateral).
+  // Montamos uma vez e repassamos com {...shell} — evita repetir em cada passo.
   const shell: ShellProps = {
     clinic,
     stepIndex: step === 'done' ? ORDER.length : ORDER.indexOf(step),

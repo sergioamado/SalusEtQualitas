@@ -7,9 +7,16 @@
 // Publicar sem exigir login: supabase functions deploy public-book --no-verify-jwt
 import { corsHeaders, json, serviceClient } from '../_shared/http.ts';
 
+// COMO O CAPTCHA FUNCIONA (Cloudflare Turnstile):
+// 1. No site, o widget do Cloudflare observa o navegador e gera um TOKEN ("passe").
+// 2. O site manda o token junto com o agendamento para esta função.
+// 3. Aqui, no servidor, perguntamos ao Cloudflare "esse passe é válido?" usando a
+//    chave SECRETA. Se fosse conferido no navegador, um robô pularia a conferência.
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
+// Deno.serve: "fique escutando pedidos; para cada um, rode esta função".
 Deno.serve(async (req) => {
+  // Pergunta prévia do navegador (CORS) — veja _shared/http.ts.
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Método não permitido' }, 405);
 
@@ -26,6 +33,8 @@ Deno.serve(async (req) => {
   if (b.check === true) return json({ configured: !!secret });
   if (!secret) return json({ error: 'CAPTCHA_NOT_CONFIGURED' }, 503);
 
+  // IP real do paciente. O Supabase roda atrás do Cloudflare, que informa o IP
+  // original no cabeçalho cf-connecting-ip. Usado nos limites "X pedidos por conexão".
   const ip =
     req.headers.get('cf-connecting-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
   const token = typeof b.captcha_token === 'string' ? b.captcha_token : '';
@@ -40,6 +49,9 @@ Deno.serve(async (req) => {
     .catch(() => null);
   if (!check?.success) return json({ error: 'CAPTCHA_FAILED' }, 400);
 
+  // Captcha ok. Agora agendamos usando a chave mestra (serviceClient), porque a
+  // função public_book_verified só aceita chamadas do servidor — assim ninguém
+  // consegue chamá-la direto do navegador para "pular" o captcha.
   const db = serviceClient();
   const { data, error } = await db.rpc('public_book_verified', {
     p_ip: ip,

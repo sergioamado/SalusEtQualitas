@@ -5,7 +5,12 @@ App único para **computador (navegador), Android e iPhone**, feito com Expo (Re
 ```
 app/        App Expo (web + Android + iOS)
 supabase/   Banco de dados: migrations e dados de demonstração
+docs/       Arquitetura, diagramas UML e guia de estudo
 ```
+
+> **Quer aprender como o sistema foi feito?** Comece pelo [docs/APRENDA.md](docs/APRENDA.md),
+> um roteiro de estudo arquivo por arquivo. Os arquivos principais têm comentários didáticos.
+> A visão geral com diagramas está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## Status
 

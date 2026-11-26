@@ -11,6 +11,14 @@ import { BillingBanner } from '@/features/platform/BillingBanner';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
+// ============================================================================
+// MOLDURA DO PAINEL DE UMA CLÍNICA — /painel/<id>/...
+// ----------------------------------------------------------------------------
+// Carrega a clínica UMA vez e a compartilha com todas as telas internas (agenda,
+// serviços, equipe, dashboard…) através do ClinicContext. Assim cada tela só
+// faz `const { clinic } = useClinic()` em vez de buscar a clínica de novo.
+// <Slot /> (lá embaixo) é o lugar onde a tela atual é desenhada.
+// ============================================================================
 export default function ClinicPanelLayout() {
   const { clinicId } = useLocalSearchParams<{ clinicId: string }>();
   const { isPlatformAdmin, memberships, signOut } = useAuth();
@@ -20,6 +28,8 @@ export default function ClinicPanelLayout() {
 
   useEffect(() => {
     let active = true;
+    // Busca a clínica pelo id da URL. Se o usuário não for membro, o RLS faz o banco
+    // devolver "nada" (data = null) — e mostramos "Clínica não encontrada".
     supabase
       .from('clinics')
       .select('*')
@@ -37,6 +47,8 @@ export default function ClinicPanelLayout() {
   // Mantém a tela atual durante recargas (ex.: depois de salvar configurações).
   const current = response?.key === key ? response : response?.clinic?.id === clinicId ? response : undefined;
   const role = memberships.find((m) => m.clinic_id === clinicId)?.role ?? null;
+  // Permissão de interface: esconde botões de gerente para quem não é gerente.
+  // (De novo: a proteção real é o RLS/triggers no banco; isto é só para não confundir.)
   const canManage = isPlatformAdmin || role === 'admin';
 
   const loadedClinic = current?.clinic ?? null;

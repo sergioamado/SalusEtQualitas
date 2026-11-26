@@ -96,6 +96,12 @@ export function AgendaScreen() {
   const range = rangeRes?.data;
 
   // RNF03: tempo real — qualquer mudança (inclusive do link público) atualiza a agenda.
+  // COMO FUNCIONA: abrimos um "canal" com o Supabase Realtime e pedimos "me avise
+  // quando mudar algo nestas tabelas, só desta clínica". A cada aviso, aumentamos
+  // `version`, o que faz a agenda buscar os dados de novo.
+  // DEBOUNCE: se chegarem 10 avisos seguidos (ex.: arrastar vários horários),
+  // esperamos 300 ms de silêncio e recarregamos UMA vez só, em vez de 10.
+  // useRef guarda o temporizador sem redesenhar a tela.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const bump = () => {
@@ -108,6 +114,7 @@ export function AgendaScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_events', filter: `clinic_id=eq.${clinic.id}` }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'waitlist', filter: `clinic_id=eq.${clinic.id}` }, bump)
       .subscribe();
+    // Limpeza ao sair da tela: fecha o canal (senão ficaria escutando para sempre).
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
       supabase.removeChannel(channel);

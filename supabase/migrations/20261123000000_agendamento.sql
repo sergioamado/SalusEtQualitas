@@ -3,12 +3,26 @@
 -- Esquema completo (agenda interna + portal público + dashboard).
 -- Segurança: RLS em todas as tabelas. O usuário anônimo (portal público)
 -- NÃO acessa tabelas diretamente — só as funções public_* (RNF05/LGPD).
+--
+-- COMO LER ESTE ARQUIVO (para quem está aprendendo):
+--   * Uma "migration" é um passo de evolução do banco. Cada arquivo da pasta
+--     supabase/migrations roda UMA vez, em ordem de data (o número no nome).
+--     Nunca editamos o SQL de uma migration já aplicada para MUDAR o banco:
+--     criamos uma nova migration (veja as seguintes, que adicionam colunas).
+--   * Aqui o banco não é só um "depósito": ele GUARDA AS REGRAS DO NEGÓCIO.
+--     Ex.: é o banco que impede dois agendamentos no mesmo horário. Assim a
+--     regra vale para o site, para o Android, para o iPhone e para qualquer
+--     integração futura, sem repetir código em cada lugar.
 -- =====================================================================
 
+-- Extensão que permite a regra "sem sobreposição de horários" (EXCLUDE ... gist),
+-- usada na tabela appointments mais abaixo.
 create extension if not exists btree_gist;
 
 -- ---------------------------------------------------------------------
 -- Tipos
+-- ENUM = lista fechada de valores permitidos. O banco recusa qualquer outro
+-- (ex.: status 'agendadoo' com erro de digitação nunca entra).
 -- ---------------------------------------------------------------------
 create type appointment_status as enum (
   'agendado', 'reservado', 'confirmado', 'nao_compareceu', 'concluido', 'cancelado'
@@ -25,6 +39,10 @@ create type member_role as enum ('admin', 'recepcao', 'profissional');
 -- ---------------------------------------------------------------------
 -- Clínica e equipe
 -- ---------------------------------------------------------------------
+-- Cada tabela tem um id do tipo uuid (código aleatório e único, ex.: 3f2a…).
+-- Por que não 1, 2, 3? Porque uuid não deixa ninguém "adivinhar" o id da clínica
+-- vizinha trocando um número na URL.
+-- "check (...)" = regra que cada linha precisa cumprir. "not null" = obrigatório.
 create table clinics (
   id                     uuid primary key default gen_random_uuid(),
   slug                   text not null unique check (slug ~ '^[a-z0-9-]{3,60}$'), -- RF08
@@ -43,6 +61,10 @@ create table clinics (
   created_at             timestamptz not null default now()
 );
 
+-- Quem trabalha em qual clínica e com qual papel.
+-- "references X on delete cascade" = chave estrangeira: aponta para outra tabela;
+-- se a clínica for apagada, estas linhas são apagadas junto (cascade).
+-- auth.users é a tabela de usuários do Supabase Auth (login).
 create table clinic_members (
   clinic_id  uuid not null references clinics(id) on delete cascade,
   user_id    uuid not null references auth.users(id) on delete cascade,
@@ -64,6 +86,9 @@ create table professionals (
   -- RN03: tempo de deslocamento (antes e depois) em atendimentos residenciais
   travel_buffer_min int not null default 30 check (travel_buffer_min between 0 and 240),
   created_at        timestamptz not null default now(),
+  -- unique (id, clinic_id) parece redundante (id já é único), mas permite que
+  -- outras tabelas apontem para (id, clinic_id) JUNTOS. Resultado: é impossível
+  -- um agendamento da clínica A usar um profissional da clínica B. Veja appointments.
   unique (id, clinic_id)
 );
 
@@ -93,6 +118,8 @@ create table procedures (
   check (allows_clinic or allows_home_care)
 );
 
+-- Tabela de ligação "muitos-para-muitos": quais serviços cada profissional faz.
+-- (Um profissional faz vários serviços; um serviço é feito por vários profissionais.)
 create table professional_procedures (
   professional_id uuid not null references professionals(id) on delete cascade,
   procedure_id    uuid not null references procedures(id) on delete cascade,
@@ -116,6 +143,7 @@ create table working_hours (
   end_time        time not null,
   check (end_time > start_time)
 );
+-- Índice = "sumário" do livro: acelera buscas por essas colunas.
 create index on working_hours (professional_id, weekday);
 
 -- RF13: pausas/intervalos recorrentes
@@ -155,6 +183,7 @@ create table contacts (
   updated_at  timestamptz not null default now(),
   unique (id, clinic_id)
 );
+-- Um mesmo e-mail (ignorando maiúsculas) só pode existir uma vez por clínica.
 create unique index contacts_email_uq on contacts (clinic_id, lower(email)) where email is not null;
 create unique index contacts_phone_uq on contacts (clinic_id, phone) where phone is not null;
 
@@ -205,6 +234,10 @@ create table appointments (
   )),
 
   -- RNF03 / RN03: o banco recusa overbooking, mesmo em requisições simultâneas.
+  -- Leitura: "não pode existir duas linhas com o MESMO profissional (=) cujos
+  -- intervalos de ocupação se SOBREPÕEM (&&)", ignorando os cancelados.
+  -- Mesmo que duas pessoas cliquem no mesmo horário no mesmo segundo, só uma entra.
+  -- '[)' = intervalo que inclui o início e exclui o fim (14:00–15:00 não colide com 15:00–16:00).
   constraint appointments_no_professional_overlap exclude using gist (
     professional_id with =, tstzrange(busy_start, busy_end, '[)') with &&
   ) where (status <> 'cancelado'),
@@ -215,6 +248,9 @@ create table appointments (
 create index on appointments (clinic_id, starts_at);
 create index on appointments (contact_id);
 
+-- TRIGGER (gatilho): função que o banco roda SOZINHO antes de gravar cada
+-- agendamento. Aqui ela calcula campos derivados (fim pela duração do serviço,
+-- tempo de deslocamento, data de cancelamento) para o app nunca esquecer.
 create function appointments_before_write() returns trigger
 language plpgsql set search_path = public as $$
 declare
@@ -292,6 +328,18 @@ create index on waitlist (clinic_id, status);
 -- =====================================================================
 -- RLS — somente membros da clínica
 -- =====================================================================
+-- COMO FUNCIONA O RLS (Row Level Security):
+-- 1. "enable row level security" liga a proteção: a partir daí NINGUÉM lê nem
+--    altera a tabela, a não ser que uma "policy" (política) permita.
+-- 2. Cada policy é uma condição. Ex.: "pode ler a linha se is_clinic_member(clinic_id)".
+-- 3. auth.uid() é o id de quem está logado (vem do token que o app envia).
+-- Resultado: a recepcionista da clínica A pode até tentar ler a tabela inteira de
+-- agendamentos — o banco devolve SÓ os da clínica A.
+--
+-- "security definer" = a função roda com permissão do DONO (e não de quem chama).
+-- Necessário aqui porque a própria clinic_members tem RLS; sem isso, a checagem
+-- ficaria presa num círculo. "set search_path = public" é uma proteção padrão
+-- para funções security definer (evita que alguém "troque" tabelas pelo caminho).
 create function is_clinic_member(p_clinic_id uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
@@ -320,6 +368,8 @@ create policy clinics_update on clinics for update to authenticated
 create policy members_select on clinic_members for select to authenticated
   using (is_clinic_member(clinic_id));
 
+-- Bloco "do": um pequeno programa que cria a MESMA política em várias tabelas,
+-- em vez de repetir o comando sete vezes.
 do $$
 declare t text;
 begin
@@ -349,6 +399,8 @@ create policy procedure_rooms_member on procedure_rooms for all to authenticated
 -- =====================================================================
 
 -- Verifica se um horário é livre para um profissional.
+-- Funções que começam com "_" são internas: o app não pode chamá-las (veja o
+-- "revoke" no final). Só outras funções do banco as usam.
 -- Devolve o_ok e, quando o procedimento precisa de sala na clínica, a sala escolhida.
 create function _check_slot(
   p_clinic_id   uuid,
@@ -439,6 +491,9 @@ end $$;
 -- =====================================================================
 
 -- Dados públicos da clínica: serviços e profissionais visíveis.
+-- Esta é a "vitrine": devolve um JSON pronto com SÓ o que pode ser público.
+-- Nada de dados de pacientes. O paciente (usuário "anon") só enxerga o banco
+-- através de funções assim. (Migrations posteriores recriam esta função com mais campos.)
 create function public_clinic(p_slug text) returns json
 language sql stable security definer set search_path = public as $$
   select json_build_object(
@@ -482,6 +537,9 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- Horários livres de um dia (data local da clínica).
+-- Lógica: para cada profissional que faz o serviço -> para cada bloco de trabalho
+-- do dia -> anda de slot_interval_min em slot_interval_min (ex.: 30 min) e testa
+-- cada horário com _check_slot. "return next" adiciona uma linha à resposta.
 -- p_professional_id nulo = qualquer profissional habilitado.
 create function public_available_slots(
   p_slug            text,
@@ -553,6 +611,10 @@ begin
 end $$;
 
 -- Confirma o agendamento do portal.
+-- NUNCA confie no que vem do navegador: tudo é conferido de novo aqui
+-- (serviço existe? profissional faz o serviço? horário ainda livre? nome/e-mail ok?).
+-- "raise exception 'CODIGO'" interrompe e desfaz tudo; o app traduz o código
+-- (veja app/src/features/booking/api.ts, ERROR_MESSAGES).
 create function public_book(
   p_slug            text,
   p_procedure_id    uuid,
@@ -629,6 +691,8 @@ begin
   end if;
 
   -- Serializa reservas da mesma clínica para escolher sala sem corrida.
+  -- (Uma "trava" que dura até o fim desta operação: dois pedidos simultâneos da
+  --  mesma clínica esperam um pelo outro, em vez de escolherem a mesma sala.)
   perform pg_advisory_xact_lock(hashtextextended(c.id::text, 0));
 
   select * into chk from _check_slot(
@@ -677,6 +741,8 @@ begin
       p_address->>'district', p_address->>'city', upper(p_address->>'state')
     )
     returning * into v_appt;
+  -- Se, mesmo assim, a regra anti-sobreposição da tabela barrar, viramos o erro
+  -- técnico num código amigável.
   exception when exclusion_violation then
     raise exception 'SLOT_UNAVAILABLE';
   end;
@@ -697,6 +763,9 @@ end $$;
 
 -- ---------------------------------------------------------------------
 -- Permissões de execução
+-- revoke = tira a permissão; grant = dá. "anon" = visitante sem login (paciente);
+-- "authenticated" = qualquer pessoa logada. Por padrão o Postgres deixa todos
+-- executarem funções, então primeiro tiramos de todos e depois liberamos só as públicas.
 -- ---------------------------------------------------------------------
 revoke all on function _check_slot(uuid, text, uuid, int, uuid, int, boolean, appointment_modality, timestamptz)
   from public, anon, authenticated;
@@ -713,4 +782,5 @@ grant execute on function public_book(text, uuid, uuid, timestamptz, appointment
   to anon, authenticated;
 
 -- RNF03: agenda interna e dashboard recebem mudanças em tempo real
+-- (Realtime: quando a recepção marca um horário, a tela do profissional atualiza sozinha.)
 alter publication supabase_realtime add table appointments, schedule_events, waitlist;

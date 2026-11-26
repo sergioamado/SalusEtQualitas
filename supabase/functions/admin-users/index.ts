@@ -16,6 +16,11 @@ const ROLES = ['admin', 'recepcao', 'profissional'];
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  // RECEITA DE SEGURANÇA de toda função administrativa (siga sempre esta ordem):
+  //   1) quem é? (requireUser — precisa estar logado)
+  //   2) pode? (can_manage_clinic — pergunta ao BANCO, com o login da pessoa)
+  //   3) só então usa a chave mestra (serviceClient) para fazer a ação.
+  // Pular o passo 2 deixaria qualquer usuário logado mexer em qualquer clínica.
   const auth = await requireUser(req);
   if (!auth) return json({ error: 'Não autenticado' }, 401);
 
@@ -44,6 +49,8 @@ Deno.serve(async (req) => {
     return !!data;
   };
 
+  // Uma única função com várias "ações" (em vez de uma função por ação):
+  // menos coisas para publicar e a checagem de permissão acima vale para todas.
   switch (b.action) {
     case 'list': {
       const { data: members, error } = await db

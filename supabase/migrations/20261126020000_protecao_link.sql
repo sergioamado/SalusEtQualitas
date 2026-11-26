@@ -6,6 +6,15 @@
 --   - Contador de acessos: 1 por conexão, por clínica, por dia
 -- IPs, e-mails e telefones ficam só como hash (com chave secreta) e
 -- são apagados após 7 dias (LGPD: minimização).
+--
+-- PARA ESTUDAR — três ideias deste arquivo:
+--   1) "Rate limit" (limite de frequência): anotamos cada tentativa numa tabela
+--      e, antes de agendar, contamos quantas houve na última hora/dia.
+--   2) HASH: em vez de guardar o IP/e-mail, guardamos uma "impressão digital"
+--      (sha256 + chave secreta). Dá para comparar ("é o mesmo IP?") sem saber qual é.
+--   3) WRAPPER: a função antiga public_book foi renomeada para _public_book_core
+--      (o "núcleo") e a nova public_book a "embrulha" com os limites. O app não
+--      precisou mudar nada para ganhar a proteção.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -22,6 +31,8 @@ alter table platform_settings
 
 -- ---------------------------------------------------------------------
 -- Chave secreta para os hashes (fica no Vault)
+-- Vault = cofre de segredos do Supabase: o valor fica criptografado no banco e
+-- nunca aparece no código nem no GitHub. Ela é gerada aleatoriamente aqui mesmo.
 -- ---------------------------------------------------------------------
 do $$
 begin

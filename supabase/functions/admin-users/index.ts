@@ -156,6 +156,24 @@ Deno.serve(async (req) => {
         if (files.length < 1000) break;
       }
 
+      // Módulo Pacientes: fotos/anexos do prontuário ficam em clinic-records/<clínica>/<paciente>/<arquivo>.
+      // O Storage não lista "recursivo": listamos as pastas (pacientes) e depois os arquivos de cada uma.
+      const records = db.storage.from('clinic-records');
+      const { data: folders, error: foldersError } = await records.list(clinic.id, { limit: 10000 });
+      if (foldersError) return json({ error: `Não foi possível listar os anexos: ${foldersError.message}` }, 500);
+      for (const folder of folders ?? []) {
+        const prefix = `${clinic.id}/${folder.name}`;
+        for (;;) {
+          const { data: files, error } = await records.list(prefix, { limit: 1000 });
+          if (error) return json({ error: `Não foi possível listar os anexos: ${error.message}` }, 500);
+          if (!files?.length) break;
+          const { error: removeError } = await records.remove(files.map((f) => `${prefix}/${f.name}`));
+          if (removeError) return json({ error: `Não foi possível apagar os anexos: ${removeError.message}` }, 500);
+          removedFiles += files.length;
+          if (files.length < 1000) break;
+        }
+      }
+
       const { error: purgeError } = await db.rpc('admin_purge_clinic', { p_clinic_id: clinic.id });
       if (purgeError) return json({ error: `Não foi possível apagar os dados: ${purgeError.message}` }, 500);
 

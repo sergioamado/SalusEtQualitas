@@ -30,6 +30,8 @@ export type ClinicRow = {
   next_due_date: string | null;
   trial_ends_on: string | null;
   suspended_reason: string | null;
+  /** Vocabulário do módulo Pacientes: 'saude' ou 'beleza' (veja features/records/vocab.ts). */
+  record_vocabulary: 'saude' | 'beleza';
 };
 
 export type ClinicContextValue = {
@@ -38,6 +40,8 @@ export type ClinicContextValue = {
   role: MemberRole | null;
   /** Gerente da clínica ou gerente do sistema. */
   canManage: boolean;
+  /** Módulos adicionais contratados (ex.: 'pacientes'). */
+  modules: string[];
 };
 
 export const ClinicContext = createContext<ClinicContextValue | null>(null);

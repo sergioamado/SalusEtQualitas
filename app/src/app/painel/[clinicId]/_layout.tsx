@@ -24,21 +24,29 @@ export default function ClinicPanelLayout() {
   const { isPlatformAdmin, memberships, signOut } = useAuth();
   const [attempt, setAttempt] = useState(0);
   const key = `${clinicId}|${attempt}`;
-  const [response, setResponse] = useState<{ key: string; clinic?: ClinicRow | null; error?: string }>();
+  const [response, setResponse] = useState<{ key: string; clinic?: ClinicRow | null; modules?: string[]; error?: string }>();
 
   useEffect(() => {
     let active = true;
     // Busca a clínica pelo id da URL. Se o usuário não for membro, o RLS faz o banco
     // devolver "nada" (data = null) — e mostramos "Clínica não encontrada".
-    supabase
-      .from('clinics')
-      .select('*')
-      .eq('id', clinicId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!active) return;
-        setResponse(error ? { key, error: error.message } : { key, clinic: data as ClinicRow | null });
-      });
+    // Junto, os módulos contratados (para mostrar ou esconder menus como "Pacientes").
+    Promise.all([
+      supabase.from('clinics').select('*').eq('id', clinicId).maybeSingle(),
+      supabase.from('clinic_modules').select('module_key').eq('clinic_id', clinicId),
+    ]).then(([clinicRes, modulesRes]) => {
+      if (!active) return;
+      const error = clinicRes.error ?? modulesRes.error;
+      setResponse(
+        error
+          ? { key, error: error.message }
+          : {
+              key,
+              clinic: clinicRes.data as ClinicRow | null,
+              modules: (modulesRes.data ?? []).map((m) => m.module_key as string),
+            },
+      );
+    });
     return () => {
       active = false;
     };
@@ -52,12 +60,13 @@ export default function ClinicPanelLayout() {
   const canManage = isPlatformAdmin || role === 'admin';
 
   const loadedClinic = current?.clinic ?? null;
+  const modules = current?.modules;
   const value = useMemo(
     () =>
       loadedClinic
-        ? { clinic: loadedClinic, reload: () => setAttempt((n) => n + 1), role, canManage }
+        ? { clinic: loadedClinic, reload: () => setAttempt((n) => n + 1), role, canManage, modules: modules ?? [] }
         : null,
-    [loadedClinic, role, canManage],
+    [loadedClinic, role, canManage, modules],
   );
 
   if (!current) {
@@ -81,7 +90,7 @@ export default function ClinicPanelLayout() {
 
   return (
     <ClinicContext.Provider value={value}>
-      <PanelHeader clinic={value.clinic} canManage={canManage} isPlatformAdmin={isPlatformAdmin} onSignOut={signOut} />
+      <PanelHeader clinic={value.clinic} canManage={canManage} modules={value.modules} isPlatformAdmin={isPlatformAdmin} onSignOut={signOut} />
       <BillingBanner clinic={value.clinic} canManage={canManage} />
       <Slot />
     </ClinicContext.Provider>
@@ -91,11 +100,13 @@ export default function ClinicPanelLayout() {
 function PanelHeader({
   clinic,
   canManage,
+  modules,
   isPlatformAdmin,
   onSignOut,
 }: {
   clinic: ClinicRow;
   canManage: boolean;
+  modules: string[];
   isPlatformAdmin: boolean;
   onSignOut: () => void;
 }) {
@@ -109,6 +120,8 @@ function PanelHeader({
     { href: `${base}/espera`, label: 'Lista de espera' },
     ...(canManage
       ? [
+          // Módulo Pacientes (adicional): só aparece se a clínica contratou.
+          ...(modules.includes('pacientes') ? [{ href: `${base}/fichas`, label: 'Modelos de ficha' }] : []),
           { href: `${base}/servicos`, label: 'Serviços' },
           { href: `${base}/profissionais`, label: 'Profissionais e horários' },
           { href: `${base}/configuracoes`, label: 'Clínica e aparência' },

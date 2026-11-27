@@ -8,6 +8,7 @@ import { Button, Loading, Muted, Notice, Screen, Text, Title } from '@/component
 import { MaxPanelWidth, Radius, Space, usePalette } from '@/constants/theme';
 import { ClinicContext, type ClinicRow } from '@/features/panel/clinic-context';
 import { BillingBanner } from '@/features/platform/BillingBanner';
+import { cap, vocab } from '@/features/records/vocab';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
@@ -118,6 +119,7 @@ function PanelHeader({
     { href: `${base}/dashboard`, label: 'Dashboard' },
     { href: `${base}/agendamentos`, label: 'Pedidos recebidos' },
     { href: `${base}/espera`, label: 'Lista de espera' },
+    ...(modules.includes('pacientes') ? [{ href: `${base}/pacientes`, label: cap(vocab(clinic.record_vocabulary).people) }] : []),
     ...(canManage
       ? [
           // Módulo Pacientes (adicional): só aparece se a clínica contratou.
@@ -155,7 +157,8 @@ function PanelHeader({
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
           {tabs.map((t) => {
-            const active = pathname === t.href;
+            // Também fica marcada nas telas "dentro" da aba (ex.: /pacientes/<id>).
+            const active = pathname === t.href || (t.href !== base && pathname.startsWith(`${t.href}/`));
             return (
               <Pressable
                 key={t.href}

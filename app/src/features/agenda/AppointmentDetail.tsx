@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 
@@ -6,6 +7,8 @@ import { Badge, Button, Chip, Field, Muted, Notice, SectionLabel, SummaryRow } f
 import { Space } from '@/constants/theme';
 import { formatDateTimeLong, formatPrice, formatTime, maskPhone } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import { useClinic } from '@/features/panel/clinic-context';
+import { vocab } from '@/features/records/vocab';
 import { toLocal } from '@/lib/tz';
 
 import { CHANNEL_LABEL, STATUS_LABEL, STATUS_ORDER, type AgendaAppointment, type AgendaSetup, type Status } from './api';
@@ -35,6 +38,13 @@ export function AppointmentDetail({
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [waitlistHint, setWaitlistHint] = useState<number | null>(null);
+  // Módulo Pacientes: atalho para o prontuário (dono e profissionais; recepção não tem acesso).
+  const { modules, role, clinic } = useClinic();
+  const showRecord = modules.includes('pacientes') && (role === 'admin' || role === 'profissional');
+  const openRecord = () => {
+    onClose();
+    router.push(`/painel/${clinicId}/pacientes/${a.contact_id}?atendimento=${a.id}` as never);
+  };
 
   const procedure = setup.procedures.find((p) => p.id === a.procedure_id);
   const professional = setup.professionals.find((p) => p.id === a.professional_id);
@@ -159,6 +169,7 @@ export function AppointmentDetail({
 
       {error ? <Notice tone="danger">{error}</Notice> : null}
 
+      {showRecord ? <Button label={`Abrir ${vocab(clinic.record_vocabulary).record} / registrar atendimento`} onPress={openRecord} /> : null}
       <Button label="Editar / remarcar" onPress={onEdit} />
 
       {!cancelled ? (

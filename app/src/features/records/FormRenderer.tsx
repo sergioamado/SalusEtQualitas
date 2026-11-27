@@ -198,7 +198,7 @@ function DateControl({
   return (
     <Field
       label={label}
-      hint={hint ?? 'DD/MM/AAAA'}
+      hint={hint}
       error={error ?? (invalid ? 'Data inválida.' : null)}
       value={text}
       keyboardType="number-pad"

@@ -28,7 +28,7 @@ import {
   type WeekSchedule,
 } from '@/lib/schedule';
 import { supabase } from '@/lib/supabase';
-import { pickAndUploadImage } from '@/lib/upload';
+import { pickAndUploadImage, removeUploadedImage } from '@/lib/upload';
 import { Avatar } from '@/features/booking/ClinicHome';
 
 import { ScheduleEditor } from './ScheduleEditor';
@@ -278,6 +278,8 @@ function ProfessionalForm({
   const [photoUrl, setPhotoUrl] = useState<string | null>(p?.photo_url ?? null);
   const [bio, setBio] = useState(p?.bio ?? '');
   const [uploading, setUploading] = useState(false);
+  // Fotos enviadas neste formulário e ainda não salvas: apagadas se não forem usadas.
+  const [pending, setPending] = useState<string[]>([]);
   const [color, setColor] = useState(p?.color ?? COLORS[data.professionals.length % COLORS.length]);
   const [userId, setUserId] = useState<string | null>(p?.user_id ?? null);
   const [active, setActive] = useState(p?.active ?? true);
@@ -320,6 +322,9 @@ function ProfessionalForm({
         procedure_ids: procIds,
         week,
       });
+      // Limpa as fotos que não ficaram em uso (as testadas e a antiga, se trocou).
+      const unused = [...pending, p?.photo_url ?? null].filter((u): u is string => !!u && u !== photoUrl);
+      await Promise.all(unused.map((u) => removeUploadedImage(u)));
       onClose(p ? 'Profissional atualizado.' : 'Profissional criado.');
     } catch (e) {
       setError((e as Error).message);
@@ -341,6 +346,7 @@ function ProfessionalForm({
       );
       return;
     }
+    await Promise.all([...pending, p.photo_url].filter((u): u is string => !!u).map((u) => removeUploadedImage(u)));
     onClose('Profissional excluído.');
   };
 
@@ -349,7 +355,10 @@ function ProfessionalForm({
     setUploading(true);
     try {
       const url = await pickAndUploadImage(clinicId, 'professional');
-      if (url) setPhotoUrl(url);
+      if (url) {
+        setPending((l) => [...l, url]);
+        setPhotoUrl(url);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -491,7 +500,15 @@ function ProfessionalForm({
 
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <Button label={p ? 'Salvar alterações' : 'Criar profissional'} loading={saving} onPress={save} />
-      <Button label="Cancelar" variant="secondary" disabled={saving} onPress={() => onClose()} />
+      <Button
+        label="Cancelar"
+        variant="secondary"
+        disabled={saving}
+        onPress={async () => {
+          await Promise.all(pending.map((u) => removeUploadedImage(u)));
+          onClose();
+        }}
+      />
 
       {p ? (
         confirmDelete ? (

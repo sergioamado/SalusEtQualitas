@@ -12,16 +12,21 @@ import {
   fetchNotes,
   fetchOverview,
   formatBytes,
+  listClinicModules,
+  listModules,
   listPayments,
   listPlans,
   money,
   PAYMENT_METHODS,
   registerPayment,
   saveNotes,
+  setClinicModule,
   setClinicStatus,
   STATUS_LABEL,
   STATUS_TONE,
   updateSubscription,
+  type ClinicModule,
+  type Module,
   type OverviewClinic,
   type Payment,
   type PaymentMethod,
@@ -30,7 +35,16 @@ import {
 import { brToDateKey, dateKeyToBr, maskDate } from '@/lib/format';
 import { portalBaseUrl } from '@/lib/supabase';
 
-type Loaded = { key: string; clinic?: OverviewClinic | null; plans?: Plan[]; payments?: Payment[]; notes?: string; error?: string };
+type Loaded = {
+  key: string;
+  clinic?: OverviewClinic | null;
+  plans?: Plan[];
+  payments?: Payment[];
+  notes?: string;
+  modules?: Module[];
+  clinicModules?: ClinicModule[];
+  error?: string;
+};
 type Msg = { tone: 'success' | 'danger'; text: string } | null;
 
 const parseMoney = (v: string) => {
@@ -53,10 +67,25 @@ export default function AdminClinicScreen() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([fetchOverview(), listPlans(), listPayments(String(id)), fetchNotes(String(id))])
-      .then(([overview, plans, payments, notes]) => {
+    Promise.all([
+      fetchOverview(),
+      listPlans(),
+      listPayments(String(id)),
+      fetchNotes(String(id)),
+      listModules(),
+      listClinicModules(String(id)),
+    ])
+      .then(([overview, plans, payments, notes, modules, clinicModules]) => {
         if (!active) return;
-        setLoaded({ key, clinic: overview.clinics.find((c) => c.id === id) ?? null, plans, payments, notes });
+        setLoaded({
+          key,
+          clinic: overview.clinics.find((c) => c.id === id) ?? null,
+          plans,
+          payments,
+          notes,
+          modules,
+          clinicModules,
+        });
       })
       .catch((e: Error) => active && setLoaded({ key, error: e.message }));
     return () => {
@@ -95,6 +124,13 @@ export default function AdminClinicScreen() {
         <View style={styles.col}>
           <StatusCard clinic={clinic} onChanged={reload} />
           <SubscriptionCard key={`sub-${key}`} clinic={clinic} plans={data.plans ?? []} onSaved={reload} />
+          <ModulesCard
+            key={`mod-${key}`}
+            clinic={clinic}
+            modules={data.modules ?? []}
+            enabled={data.clinicModules ?? []}
+            onChanged={reload}
+          />
           <PaymentsCard key={`pay-${key}`} clinic={clinic} payments={data.payments ?? []} onChanged={reload} />
         </View>
         <View style={styles.col}>
@@ -297,11 +333,132 @@ function SubscriptionCard({ clinic, plans, onSaved }: { clinic: OverviewClinic; 
 }
 
 // ---------------------------------------------------------------------
+// Módulos adicionais (cobrados à parte, somados ao plano)
+// ---------------------------------------------------------------------
+function ModulesCard({
+  clinic,
+  modules,
+  enabled,
+  onChanged,
+}: {
+  clinic: OverviewClinic;
+  modules: Module[];
+  enabled: ClinicModule[];
+  onChanged: () => void;
+}) {
+  const c = usePalette();
+  return (
+    <Card>
+      <SectionLabel>Módulos adicionais</SectionLabel>
+      {modules.length === 0 ? <Muted>Nenhum módulo cadastrado.</Muted> : null}
+      {modules.map((m) => (
+        <ModuleRow
+          key={m.key}
+          clinicId={clinic.id}
+          module={m}
+          current={enabled.find((e) => e.module_key === m.key) ?? null}
+          onChanged={onChanged}
+        />
+      ))}
+      <View style={[styles.totalRow, { borderTopColor: c.border }]}>
+        <Text style={{ color: c.textMuted, flex: 1 }}>
+          Plano {money(clinic.price)} + módulos {money(clinic.modules_price)}
+        </Text>
+        <Text style={{ color: c.text, fontWeight: '700' }}>{money(clinic.total_price)}/mês</Text>
+      </View>
+    </Card>
+  );
+}
+
+function ModuleRow({
+  clinicId,
+  module: m,
+  current,
+  onChanged,
+}: {
+  clinicId: string;
+  module: Module;
+  current: ClinicModule | null;
+  onChanged: () => void;
+}) {
+  const c = usePalette();
+  const on = !!current;
+  const [price, setPrice] = useState(moneyInput(current?.price_monthly));
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+
+  const apply = async (turnOn: boolean) => {
+    setMsg(null);
+    const value = price.trim() ? parseMoney(price) : null;
+    if (turnOn && value != null && (Number.isNaN(value) || value < 0)) return setMsg({ tone: 'danger', text: 'Valor inválido.' });
+    setBusy(true);
+    try {
+      await setClinicModule(clinicId, m.key, turnOn, turnOn ? value : null);
+      setConfirmOff(false);
+      onChanged();
+    } catch (e) {
+      setMsg({ tone: 'danger', text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={[styles.moduleRow, { borderColor: c.border }]}>
+      <View style={styles.row}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: c.text, fontWeight: '700' }}>{m.name}</Text>
+          <Muted style={{ fontSize: 13 }}>
+            Tabela: {money(m.price_monthly)}/mês{m.active ? '' : ' · fora de venda (não funciona em nenhuma clínica)'}
+          </Muted>
+          {current ? <Muted style={{ fontSize: 13 }}>Ligado em {brDate(current.enabled_at)}</Muted> : null}
+        </View>
+        <Badge label={on ? 'Ligado' : 'Desligado'} tone={on ? 'success' : 'neutral'} />
+      </View>
+      <Field
+        label="Valor combinado (opcional)"
+        value={price}
+        onChangeText={setPrice}
+        keyboardType="decimal-pad"
+        placeholder={moneyInput(m.price_monthly)}
+        hint="Vazio = valor de tabela. Use 0 para dar de brinde."
+      />
+      {msg ? <Notice tone={msg.tone}>{msg.text}</Notice> : null}
+      {on ? (
+        confirmOff ? (
+          <View style={{ gap: Space.sm }}>
+            <Notice tone="warning">
+              Ao desligar, a clínica não registra mais nada novo, mas o dono continua lendo o que já existe. Nada é
+              apagado e dá para ligar de novo depois.
+            </Notice>
+            <Button label="Sim, desligar" loading={busy} onPress={() => apply(false)} />
+            <Button label="Manter ligado" variant="secondary" onPress={() => setConfirmOff(false)} />
+          </View>
+        ) : (
+          <View style={styles.row}>
+            <View style={styles.flex}>
+              <Button label="Salvar valor" variant="secondary" loading={busy} onPress={() => apply(true)} />
+            </View>
+            <View style={styles.flex}>
+              <Button label="Desligar" variant="secondary" onPress={() => setConfirmOff(true)} />
+            </View>
+          </View>
+        )
+      ) : (
+        <Button label="Ligar para esta clínica" loading={busy} onPress={() => apply(true)} />
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------
 // Pagamentos
 // ---------------------------------------------------------------------
 function PaymentsCard({ clinic, payments, onChanged }: { clinic: OverviewClinic; payments: Payment[]; onChanged: () => void }) {
   const c = usePalette();
-  const [amount, setAmount] = useState(moneyInput(clinic.price));
+  // Sugere o total do mês: plano + módulos adicionais.
+  const [amount, setAmount] = useState(moneyInput(clinic.total_price || clinic.price));
   const [paidOn, setPaidOn] = useState(dateKeyToBr(todayKey()));
   const [method, setMethod] = useState<PaymentMethod>('pix');
   const [reference, setReference] = useState('');
@@ -556,6 +713,8 @@ function DangerCard({ clinic }: { clinic: OverviewClinic }) {
 }
 
 const styles = StyleSheet.create({
+  moduleRow: { borderWidth: 1, borderRadius: Radius.md, padding: Space.md, gap: Space.sm },
+  totalRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Space.sm },
   back: { fontSize: 15, fontWeight: '600', opacity: 0.8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, alignItems: 'center' },

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Loading, Muted, Notice, Screen, SectionLabel, Text, Title, ToggleRow } from '@/components/ui';
 import { Space, usePalette } from '@/constants/theme';
-import { deletePlan, listPlans, money, savePlan, type Plan } from '@/features/platform/api';
+import { deletePlan, listModules, listPlans, money, saveModule, savePlan, type Module, type Plan } from '@/features/platform/api';
 
 const parseMoney = (v: string) => Number(v.replace(/\s|R\$/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
 
@@ -54,6 +54,8 @@ export default function PlansScreen() {
       ) : (
         loaded.plans.map((p) => <PlanCard key={p.id} plan={p} onEdit={() => setEditing(p)} />)
       )}
+
+      <ModulesSection />
     </Screen>
   );
 }
@@ -190,6 +192,134 @@ function PlanForm({ plan, onClose }: { plan: Plan | null; onClose: (message?: st
           </Pressable>
         )
       ) : null}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Módulos adicionais: cobrados à parte, somados ao plano de cada clínica.
+// Ligar/desligar para uma clínica é feito na página da clínica.
+// ---------------------------------------------------------------------
+function ModulesSection() {
+  const [version, setVersion] = useState(0);
+  const [loaded, setLoaded] = useState<{ key: number; modules?: Module[]; error?: string }>();
+  const [editing, setEditing] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    listModules()
+      .then((modules) => active && setLoaded({ key: version, modules }))
+      .catch((e: Error) => active && setLoaded({ key: version, error: e.message }));
+    return () => {
+      active = false;
+    };
+  }, [version]);
+
+  return (
+    <View style={{ gap: Space.md, marginTop: Space.lg }}>
+      <Title>Módulos adicionais</Title>
+      <Muted>
+        Recursos vendidos à parte. O valor do módulo é somado ao plano da clínica que o tiver ligado. Para ligar ou desligar
+        para uma clínica, abra a clínica na lista.
+      </Muted>
+      {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {loaded?.error ? (
+        <Notice tone="danger">{loaded.error}</Notice>
+      ) : !loaded?.modules ? (
+        <Loading />
+      ) : (
+        loaded.modules.map((m) =>
+          editing === m.key ? (
+            <ModuleForm
+              key={m.key}
+              module={m}
+              onClose={(message) => {
+                setEditing(null);
+                setNotice(message ?? null);
+                setVersion((v) => v + 1);
+              }}
+            />
+          ) : (
+            <ModuleCard key={m.key} module={m} onEdit={() => setEditing(m.key)} />
+          ),
+        )
+      )}
+    </View>
+  );
+}
+
+function ModuleCard({ module: m, onEdit }: { module: Module; onEdit: () => void }) {
+  const c = usePalette();
+  return (
+    <Pressable accessibilityRole="button" onPress={onEdit}>
+      <Card>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.text, fontSize: 17, fontWeight: '700' }}>{m.name}</Text>
+            {m.description ? <Muted>{m.description}</Muted> : null}
+          </View>
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <Text style={{ color: c.text, fontSize: 18, fontWeight: '700' }}>+ {money(m.price_monthly)}</Text>
+            <Muted style={{ fontSize: 13 }}>por mês</Muted>
+            {!m.active ? <Badge label="Fora de venda" tone="warning" /> : null}
+          </View>
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
+function ModuleForm({ module: m, onClose }: { module: Module; onClose: (message?: string) => void }) {
+  const [name, setName] = useState(m.name);
+  const [description, setDescription] = useState(m.description ?? '');
+  const [price, setPrice] = useState(m.price_monthly.toFixed(2).replace('.', ','));
+  const [active, setActive] = useState(m.active);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setError(null);
+    const value = parseMoney(price);
+    if (name.trim().length < 2) return setError('Informe o nome do módulo.');
+    if (!Number.isFinite(value) || value < 0) return setError('Informe o valor mensal.');
+    setBusy(true);
+    try {
+      await saveModule({ ...m, name: name.trim(), description: description.trim() || null, price_monthly: value, active });
+      onClose('Módulo atualizado.');
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <SectionLabel>Editar módulo</SectionLabel>
+      <Field label="Nome" value={name} onChangeText={(v) => setName(v.slice(0, 60))} />
+      <Field label="Descrição (opcional)" value={description} onChangeText={(v) => setDescription(v.slice(0, 300))} />
+      <Field
+        label="Valor mensal (R$)"
+        value={price}
+        onChangeText={setPrice}
+        keyboardType="decimal-pad"
+        hint="Preço de tabela. Na página de cada clínica dá para combinar um valor especial."
+      />
+      <ToggleRow
+        label="Módulo ativo"
+        description="Desligado: o módulo para de funcionar em TODAS as clínicas (os dados ficam guardados) e sai da cobrança."
+        value={active}
+        onChange={setActive}
+      />
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+      <View style={styles.formRow}>
+        <View style={styles.flex}>
+          <Button label="Salvar módulo" loading={busy} onPress={save} />
+        </View>
+        <View style={styles.flex}>
+          <Button label="Cancelar" variant="secondary" onPress={() => onClose()} />
+        </View>
+      </View>
     </Card>
   );
 }

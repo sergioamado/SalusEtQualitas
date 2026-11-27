@@ -45,7 +45,13 @@ export type OverviewClinic = {
   public_booking_enabled: boolean;
   plan_id: string | null;
   plan_name: string | null;
+  /** Valor do plano (ou o combinado), sem os módulos. */
   price: number | null;
+  /** Módulos adicionais ligados, com o preço que esta clínica paga. */
+  modules: { key: string; name: string; price: number }[];
+  modules_price: number;
+  /** Plano + módulos: o que a clínica paga por mês. */
+  total_price: number;
   max_professionals: number | null;
   due_day: number | null;
   next_due_date: string | null;
@@ -90,6 +96,17 @@ export type Overview = {
   };
   clinics: OverviewClinic[];
 };
+
+/** Módulo adicional vendido à parte (ex.: Pacientes e prontuário). */
+export type Module = {
+  key: string;
+  name: string;
+  description: string | null;
+  price_monthly: number;
+  active: boolean;
+  sort_order: number;
+};
+export type ClinicModule = { module_key: string; price_monthly: number | null; enabled_at: string };
 
 export type Payment = {
   id: string;
@@ -262,6 +279,36 @@ export async function savePlan(plan: Omit<Plan, 'id'> & { id?: string }) {
 export async function deletePlan(id: string) {
   const { error } = await supabase.from('plans').delete().eq('id', id);
   if (error) fail('Não foi possível excluir o plano.', error);
+}
+
+// ---------------------------------------------------------------------
+// Módulos adicionais (o banco só deixa o gerente do sistema alterar)
+// ---------------------------------------------------------------------
+export async function listModules(): Promise<Module[]> {
+  const { data, error } = await supabase.from('modules').select('*').order('sort_order').order('name');
+  if (error) fail('Não foi possível carregar os módulos.', error);
+  return (data ?? []) as Module[];
+}
+
+/** Só nome, descrição, preço e "à venda": a chave (key) é usada pelo código e não muda. */
+export async function saveModule(m: Module) {
+  const { key, ...fields } = m;
+  const { error } = await supabase.from('modules').update(fields).eq('key', key);
+  if (error) fail('Não foi possível salvar o módulo.', error);
+}
+
+export async function listClinicModules(clinicId: string): Promise<ClinicModule[]> {
+  const { data, error } = await supabase.from('clinic_modules').select('module_key,price_monthly,enabled_at').eq('clinic_id', clinicId);
+  if (error) fail('Não foi possível carregar os módulos da clínica.', error);
+  return (data ?? []) as ClinicModule[];
+}
+
+/** Liga (com preço especial opcional) ou desliga um módulo para a clínica. */
+export async function setClinicModule(clinicId: string, key: string, on: boolean, price: number | null) {
+  const { error } = on
+    ? await supabase.from('clinic_modules').upsert({ clinic_id: clinicId, module_key: key, price_monthly: price })
+    : await supabase.from('clinic_modules').delete().eq('clinic_id', clinicId).eq('module_key', key);
+  if (error) fail('Não foi possível alterar o módulo.', error);
 }
 
 export async function fetchSettings(): Promise<PlatformSettings> {

@@ -196,7 +196,15 @@ function ClinicRowCard({ item }: { item: OverviewClinic }) {
             <Badge label={STATUS_LABEL[item.status]} tone={STATUS_TONE[item.status]} />
           </View>
           <Text style={{ color: overdue ? c.danger : c.textMuted, fontSize: 14, fontWeight: overdue ? '700' : '400' }}>
-            {item.plan_name ? `${item.plan_name} · ${money(item.price)}` : item.price ? money(item.price) : 'Sem plano'} · {billing}
+            {[
+              item.plan_name ?? (item.price ? null : 'Sem plano'),
+              // Módulos adicionais aparecem pelo nome: "+ Pacientes e prontuário".
+              ...(item.modules ?? []).map((m) => `+ ${m.name}`),
+              item.total_price ? `${money(item.total_price)}/mês` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}{' '}
+            · {billing}
           </Text>
           <View style={styles.metrics}>
             <Metric label="Agend. 30 dias" value={item.appts_30d} />

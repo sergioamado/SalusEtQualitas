@@ -8,7 +8,9 @@ import { Space } from '@/constants/theme';
 import { formatDateTimeLong, formatPrice, formatTime, maskPhone } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/features/panel/clinic-context';
+import { SendIntakeLink } from '@/features/records/SendIntakeLink';
 import { vocab } from '@/features/records/vocab';
+import { whatsappUrl } from '@/features/booking/links';
 import { toLocal } from '@/lib/tz';
 
 import { CHANNEL_LABEL, STATUS_LABEL, STATUS_ORDER, type AgendaAppointment, type AgendaSetup, type Status } from './api';
@@ -51,6 +53,24 @@ export function AppointmentDetail({
   const room = setup.rooms.find((r) => r.id === a.room_id);
   const phone = a.contact?.phone ?? null;
   const cancelled = a.status === 'cancelado';
+
+  // Orientações do serviço, prontas para mandar no WhatsApp do paciente.
+  const firstName = (a.contact?.full_name ?? '').trim().split(/\s+/)[0] ?? '';
+  const prepWa =
+    !cancelled && procedure?.prep_instructions
+      ? whatsappUrl(
+          phone,
+          `Olá, ${firstName}! Orientações para o seu atendimento de ${procedure.name} em ${clinic.name}, ` +
+            `${formatDateTimeLong(a.starts_at, timeZone)}:\n\n${procedure.prep_instructions}`,
+        )
+      : null;
+  const careWa =
+    !cancelled && procedure?.care_instructions
+      ? whatsappUrl(
+          phone,
+          `Olá, ${firstName}! Cuidados depois do seu atendimento de ${procedure.name} em ${clinic.name}:\n\n${procedure.care_instructions}`,
+        )
+      : null;
 
   const setStatus = async (status: Status) => {
     setBusy(status);
@@ -156,6 +176,24 @@ export function AppointmentDetail({
             <Button label="Ligar" variant="secondary" onPress={() => Linking.openURL(`tel:${phone}`)} />
           </View>
         </View>
+      ) : null}
+
+      {prepWa || careWa ? (
+        <View style={{ gap: Space.xs }}>
+          <SectionLabel>Orientações do serviço</SectionLabel>
+          {prepWa ? <Button label="Enviar preparação no WhatsApp" variant="secondary" onPress={() => Linking.openURL(prepWa)} /> : null}
+          {careWa ? <Button label="Enviar cuidados pós-atendimento" variant="secondary" onPress={() => Linking.openURL(careWa)} /> : null}
+        </View>
+      ) : null}
+
+      {/* Módulo Pacientes: qualquer pessoa da equipe (inclusive recepção) pode mandar a ficha. */}
+      {modules.includes('pacientes') && a.contact && !cancelled ? (
+        <SendIntakeLink
+          contactId={a.contact_id}
+          fullName={a.contact.full_name}
+          phone={phone}
+          defaultTemplateId={procedure?.anamnese_template_id ?? null}
+        />
       ) : null}
 
       <View style={{ gap: Space.xs }}>

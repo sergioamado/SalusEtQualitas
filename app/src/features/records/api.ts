@@ -5,7 +5,7 @@
 // permissão e anotam o acesso (veja a migration 20261127000000_modulo_pacientes).
 // Aqui só chamamos essas funções e traduzimos os códigos de erro.
 // ============================================================================
-import { supabase } from '@/lib/supabase';
+import { portalBaseUrl, supabase } from '@/lib/supabase';
 
 import type { Answers, FormField, RecordTemplate, TemplateKind } from './types';
 
@@ -87,6 +87,11 @@ const ERRORS: Record<string, string> = {
   INVALID_APPOINTMENT: 'O atendimento escolhido não é deste paciente.',
   REQUIRED_FIELD: 'Há perguntas obrigatórias sem resposta.',
   INVALID_ANSWER: 'Alguma resposta está em formato inválido.',
+  // Link do paciente (tela pública)
+  INTAKE_NOT_FOUND: 'Este link não existe ou foi desativado. Peça um novo link à clínica.',
+  INTAKE_USED: 'Esta ficha já foi preenchida e enviada. Obrigado!',
+  INTAKE_EXPIRED: 'Este link venceu. Peça um novo link à clínica.',
+  CONSENT_REQUIRED: 'Para enviar, marque a autorização de uso dos seus dados de saúde.',
 };
 
 export class RecordError extends Error {
@@ -103,7 +108,10 @@ function toError(error: { message?: string }): RecordError {
   const msg = error.message ?? '';
   const field = msg.match(/(REQUIRED_FIELD|INVALID_ANSWER):(\w+)/);
   if (field) return new RecordError(field[1], field[2]);
-  const code = Object.keys(ERRORS).find((k) => msg.includes(k));
+  // O mais longo primeiro: "INTAKE_NOT_FOUND" também contém "NOT_FOUND".
+  const code = Object.keys(ERRORS)
+    .sort((x, y) => y.length - x.length)
+    .find((k) => msg.includes(k));
   return new RecordError(code ?? 'UNKNOWN');
 }
 
@@ -169,6 +177,64 @@ export async function addAddendum(entryId: string, body: string): Promise<void> 
 
 export async function registerConsent(contactId: string): Promise<void> {
   const { error } = await supabase.rpc('set_health_consent', { p_contact_id: contactId });
+  if (error) throw toError(error);
+}
+
+// ---------------------------------------------------------------------
+// Link para o paciente preencher a anamnese sozinho (pelo celular)
+// ---------------------------------------------------------------------
+
+/** Endereço que o paciente abre: <site>/ficha/<código>. */
+export function intakeUrl(token: string): string {
+  return `${portalBaseUrl()}/ficha/${token}`;
+}
+
+/** Gera um link novo (vale `days` dias e só pode ser usado uma vez). */
+export async function createIntakeLink(contactId: string, templateId: string, days = 7): Promise<{ token: string; expires_at: string }> {
+  const { data, error } = await supabase.rpc('create_intake_link', {
+    p_contact_id: contactId,
+    p_template_id: templateId,
+    p_days: days,
+  });
+  if (error) throw toError(error);
+  return data as { token: string; expires_at: string };
+}
+
+export type IntakeLinkStatus = { created_at: string; expires_at: string; used_at: string | null; template_name: string | null };
+
+/** Últimos links enviados a este paciente (só datas — nada das respostas). */
+export async function fetchIntakeLinks(contactId: string): Promise<IntakeLinkStatus[]> {
+  const { data, error } = await supabase.rpc('intake_links_status', { p_contact_id: contactId });
+  if (error) throw toError(error);
+  return (data ?? []) as IntakeLinkStatus[];
+}
+
+export type PublicIntake = {
+  clinic: {
+    name: string;
+    logo_url: string | null;
+    primary_color: string | null;
+    secondary_color: string | null;
+    font_family: string | null;
+    vocabulary: string;
+  };
+  first_name: string;
+  title: string;
+  description: string | null;
+  fields: FormField[];
+  expires_at: string;
+};
+
+/** Tela pública: abre a ficha pelo código do link (sem login). */
+export async function fetchPublicIntake(token: string): Promise<PublicIntake> {
+  const { data, error } = await supabase.rpc('public_intake', { p_token: token });
+  if (error) throw toError(error);
+  return data as PublicIntake;
+}
+
+/** Tela pública: envia as respostas. Vira um registro assinado pelo paciente. */
+export async function submitPublicIntake(token: string, answers: Answers, consent: boolean): Promise<void> {
+  const { error } = await supabase.rpc('public_intake_submit', { p_token: token, p_answers: answers, p_consent: consent });
   if (error) throw toError(error);
 }
 

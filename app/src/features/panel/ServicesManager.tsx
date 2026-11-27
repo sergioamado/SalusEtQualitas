@@ -36,6 +36,11 @@ type Service = {
   image_url: string | null;
   video_url: string | null;
   sort_order: number;
+  /** Orientações ao paciente (módulo Pacientes ou não — servem para qualquer negócio). */
+  prep_instructions: string | null;
+  care_instructions: string | null;
+  /** Modelo de anamnese sugerido ao enviar a ficha por link (módulo Pacientes). */
+  anamnese_template_id: string | null;
 };
 type Named = { id: string; name: string; active: boolean };
 type Data = {
@@ -45,17 +50,21 @@ type Data = {
   /** procedure_id -> ids */
   profBy: Record<string, string[]>;
   roomBy: Record<string, string[]>;
+  /** Modelos de anamnese ativos (vazio se o módulo Pacientes estiver desligado). */
+  anamneses: { id: string; name: string }[];
 };
 
 const DURATIONS = [15, 30, 45, 60, 90, 120];
 
 async function loadData(clinicId: string): Promise<Data> {
-  const [s, p, r] = await Promise.all([
+  const [s, p, r, t] = await Promise.all([
     supabase.from('procedures').select('*').eq('clinic_id', clinicId).order('sort_order').order('name'),
     supabase.from('professionals').select('id,name,active').eq('clinic_id', clinicId).order('name'),
     supabase.from('rooms').select('id,name,active').eq('clinic_id', clinicId).order('name'),
+    // Sem o módulo, a segurança do banco simplesmente devolve lista vazia.
+    supabase.from('record_templates').select('id,name').eq('clinic_id', clinicId).eq('kind', 'anamnese').eq('active', true).order('name'),
   ]);
-  const error = s.error ?? p.error ?? r.error;
+  const error = s.error ?? p.error ?? r.error ?? t.error;
   if (error) throw new Error(error.message);
   const services = (s.data ?? []) as Service[];
   const ids = services.map((x) => x.id);
@@ -76,6 +85,7 @@ async function loadData(clinicId: string): Promise<Data> {
     rooms: (r.data ?? []) as Named[],
     profBy,
     roomBy,
+    anamneses: (t.data ?? []) as { id: string; name: string }[],
   };
 }
 
@@ -189,6 +199,8 @@ export function ServicesManager({ clinicId }: { clinicId: string }) {
                   {!s.active ? <Badge label="Desativado" /> : s.public_visible ? <Badge label="No link" tone="success" /> : <Badge label="Só interno" />}
                   {s.video_url ? <Badge label="Vídeo" tone="primary" /> : null}
                   {s.image_url ? <Badge label="Foto" tone="primary" /> : null}
+                  {s.prep_instructions ? <Badge label="Preparo" tone="primary" /> : null}
+                  {s.care_instructions ? <Badge label="Cuidados" tone="primary" /> : null}
                 </View>
               </View>
               <View style={styles.order}>
@@ -265,6 +277,9 @@ function ServiceForm({
     service ? (data.profBy[service.id] ?? []) : data.professionals.filter((p) => p.active).map((p) => p.id),
   );
   const [roomIds, setRoomIds] = useState<string[]>(service ? (data.roomBy[service.id] ?? []) : []);
+  const [prep, setPrep] = useState(service?.prep_instructions ?? '');
+  const [care, setCare] = useState(service?.care_instructions ?? '');
+  const [anamneseId, setAnamneseId] = useState(service?.anamnese_template_id ?? null);
   // Imagens enviadas neste formulário que ainda não foram salvas (apagadas se o usuário cancelar).
   const [pending, setPending] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -283,6 +298,8 @@ function ServiceForm({
     video: video.trim() && !videoId ? 'Cole um link do YouTube (youtube.com/watch?v=… ou youtu.be/…).' : null,
     modality: !allowsClinic && !allowsHome ? 'Marque pelo menos um local de atendimento.' : null,
     description: description.length > 600 ? 'Máximo de 600 caracteres.' : null,
+    prep: prep.length > 3000 ? 'Máximo de 3000 caracteres.' : null,
+    care: care.length > 3000 ? 'Máximo de 3000 caracteres.' : null,
   };
   const valid = !Object.values(errors).some(Boolean);
   const [touched, setTouched] = useState(false);
@@ -329,6 +346,14 @@ function ServiceForm({
       active,
       image_url: imageUrl,
       video_url: videoId ? youTubeWatchUrl(videoId) : null,
+      prep_instructions: prep.trim() || null,
+      care_instructions: care.trim() || null,
+      // Sem a lista (módulo desligado), mantém o que já estava gravado.
+      anamnese_template_id: data.anamneses.length
+        ? data.anamneses.some((a) => a.id === anamneseId)
+          ? anamneseId
+          : null
+        : (service?.anamnese_template_id ?? null),
     };
     try {
       let id = service?.id;
@@ -456,6 +481,40 @@ function ServiceForm({
           hint={videoId ? 'Vídeo reconhecido ✓' : 'Também vale link de Shorts ou youtu.be.'}
           error={video.trim() && !videoId ? errors.video : null}
         />
+      </Card>
+
+      <Card style={{ gap: Space.md }}>
+        <SectionLabel>Orientações ao paciente</SectionLabel>
+        <Field
+          label="Preparação (opcional)"
+          value={prep}
+          onChangeText={setPrep}
+          multiline
+          placeholder="Ex.: venha com roupa confortável; não use creme no dia; chegue 10 minutos antes"
+          hint={`Aparece para o paciente logo depois de agendar pelo link, e a equipe pode reenviar pelo WhatsApp. ${prep.length}/3000`}
+          error={show(errors.prep)}
+        />
+        <Field
+          label="Cuidados depois do atendimento (opcional)"
+          value={care}
+          onChangeText={setCare}
+          multiline
+          placeholder="Ex.: beba bastante água; evite sol por 48 horas; não lave o cabelo hoje"
+          hint={`A equipe envia pelo WhatsApp com um toque, no detalhe do agendamento. ${care.length}/3000`}
+          error={show(errors.care)}
+        />
+        {data.anamneses.length ? (
+          <View style={{ gap: Space.xs }}>
+            <SectionLabel>Ficha sugerida para este serviço</SectionLabel>
+            <Muted>Ao enviar a ficha por link a partir de um agendamento deste serviço, este modelo vem escolhido.</Muted>
+            <View style={styles.chips}>
+              <Chip label="Nenhuma" selected={!anamneseId} onPress={() => setAnamneseId(null)} />
+              {data.anamneses.map((a) => (
+                <Chip key={a.id} label={a.name} selected={anamneseId === a.id} onPress={() => setAnamneseId(a.id)} />
+              ))}
+            </View>
+          </View>
+        ) : null}
       </Card>
 
       <Card style={{ gap: Space.sm }}>

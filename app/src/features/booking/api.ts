@@ -29,6 +29,8 @@ export type PublicProcedure = {
   allows_home_care: boolean;
   image_url: string | null;
   video_url: string | null;
+  /** "Como se preparar" — mostrado depois de agendar. */
+  prep_instructions?: string | null;
 };
 
 export type PublicProfessional = {

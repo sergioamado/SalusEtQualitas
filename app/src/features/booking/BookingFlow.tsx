@@ -535,6 +535,15 @@ function DoneStep({
           startsAt: result.starts_at,
         }}
       />
+      {/* Preparação cadastrada no serviço (ex.: "venha sem maquiagem"). */}
+      {shell.summary.procedure?.prep_instructions ? (
+        <View style={[styles.prep, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>Como se preparar</Text>
+          <Text selectable style={{ color: c.text, fontSize: 15, lineHeight: 22 }}>
+            {shell.summary.procedure.prep_instructions}
+          </Text>
+        </View>
+      ) : null}
       {result.clinic_phone ? <Muted>Dúvidas ou remarcação: {result.clinic_phone}</Muted> : null}
       <Pressable accessibilityRole="button" onPress={onRestart} hitSlop={8}>
         <Text style={{ color: c.primary, fontWeight: '700', fontSize: 15 }}>Fazer outro agendamento</Text>
@@ -556,6 +565,7 @@ const styles = StyleSheet.create({
   dayWeek: { fontSize: 12, textTransform: 'capitalize' },
   dayNum: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm },
+  prep: { borderWidth: 1, borderRadius: Radius.md, padding: Space.lg, gap: Space.sm },
   doneHead: { alignItems: 'center', gap: Space.sm, paddingVertical: Space.lg },
   doneIcon: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
   doneTitle: { fontSize: 26, fontWeight: '700', textAlign: 'center' },

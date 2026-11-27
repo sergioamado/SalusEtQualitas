@@ -16,6 +16,7 @@ import { Badge, Button, Card, Chip, Field, Loading, Muted, Notice, SectionLabel,
 import { Space, usePalette } from '@/constants/theme';
 import { useClinic } from '@/features/panel/clinic-context';
 import { formatDateTimeLong, maskPhone } from '@/lib/format';
+import { supabase } from '@/lib/supabase';
 
 import {
   ACTION_LABEL,
@@ -29,6 +30,7 @@ import {
 } from './api';
 import { AnswersView } from './AnswersView';
 import { EntryEditor, type EditorState } from './EntryEditor';
+import { SendIntakeLink } from './SendIntakeLink';
 import type { RecordTemplate, TemplateKind } from './types';
 import { cap, vocab } from './vocab';
 
@@ -69,6 +71,8 @@ export function PatientRecordScreen({ contactId, appointmentId }: { contactId: s
     return (
       <View style={{ gap: Space.md }}>
         <Notice tone="danger">{current.error ?? 'Erro ao carregar.'}</Notice>
+        {/* Sem acesso ao prontuário, a equipe ainda pode mandar a ficha (só não lê a resposta). */}
+        <LockedContact contactId={contactId} />
         {role === 'profissional' ? (
           <Muted>
             Para atender alguém novo, marque o atendimento na agenda com você como profissional (pode ser um encaixe). O{' '}
@@ -150,6 +154,8 @@ export function PatientRecordScreen({ contactId, appointmentId }: { contactId: s
           }}
         />
       </Card>
+
+      {record.can_write ? <SendIntakeLink contactId={ct.id} fullName={ct.full_name} phone={ct.phone} /> : null}
 
       {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
       {!record.can_write ? (
@@ -431,6 +437,30 @@ function AccessLog({ log, timeZone }: { log: { user_name: string | null; action:
           ))
         : null}
     </Card>
+  );
+}
+
+/** Nome do contato + "Enviar ficha por link", para quem não pode abrir o prontuário. */
+function LockedContact({ contactId }: { contactId: string }) {
+  const [contact, setContact] = useState<{ id: string; full_name: string; phone: string | null } | null>(null);
+  useEffect(() => {
+    let active = true;
+    supabase
+      .from('contacts')
+      .select('id,full_name,phone')
+      .eq('id', contactId)
+      .maybeSingle()
+      .then(({ data }) => active && setContact(data));
+    return () => {
+      active = false;
+    };
+  }, [contactId]);
+  if (!contact) return null;
+  return (
+    <View style={{ gap: Space.sm }}>
+      <Text style={styles.title}>{contact.full_name}</Text>
+      <SendIntakeLink contactId={contact.id} fullName={contact.full_name} phone={contact.phone} />
+    </View>
   );
 }
 

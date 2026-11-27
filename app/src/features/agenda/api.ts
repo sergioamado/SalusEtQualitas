@@ -93,6 +93,10 @@ export type AgendaProcedure = {
   allows_clinic: boolean;
   allows_home_care: boolean;
   active: boolean;
+  /** Orientações que a equipe pode enviar ao paciente pelo WhatsApp. */
+  prep_instructions: string | null;
+  care_instructions: string | null;
+  anamnese_template_id: string | null;
 };
 export type AgendaRoom = { id: string; name: string; active: boolean };
 export type HoursRow = { professional_id: string; weekday: number; start_time: string; end_time: string };
@@ -120,7 +124,7 @@ export async function loadSetup(clinicId: string): Promise<AgendaSetup> {
     supabase.from('professionals').select('id,name,color,active,user_id,home_care_enabled').eq('clinic_id', clinicId).order('name'),
     supabase
       .from('procedures')
-      .select('id,name,duration_min,price,allows_clinic,allows_home_care,active')
+      .select('id,name,duration_min,price,allows_clinic,allows_home_care,active,prep_instructions,care_instructions,anamnese_template_id')
       .eq('clinic_id', clinicId)
       .order('sort_order')
       .order('name'),
